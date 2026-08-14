@@ -61,6 +61,13 @@ async function runBuffered() {
     const output = cards[i].querySelector(".variant-output");
     output.textContent = result.output;
     output.classList.remove("placeholder");
+
+    if (result.matches_expected !== null) {
+      const badge = document.createElement("span");
+      badge.className = `badge result-badge ${result.matches_expected ? "clear" : "flagged"}`;
+      badge.textContent = result.matches_expected ? "✓ Correct" : "✗ Incorrect";
+      output.appendChild(badge);
+    }
   });
 }
 

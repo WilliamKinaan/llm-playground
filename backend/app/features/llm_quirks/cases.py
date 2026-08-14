@@ -121,6 +121,39 @@ CASES: list[CaseDefinition] = [
         ),
         streaming=True,
     ),
+    CaseDefinition(
+        id="large-multiplication",
+        title="4,738 × 2,913",
+        teaser="One confident number. It's wrong — and not the same wrong twice.",
+        description=(
+            "Ask the model to multiply two four-digit numbers and reply with only the "
+            "final number, no working shown. Click Go to run it live and check the "
+            "digits yourself."
+        ),
+        variants=[
+            CaseVariant(
+                label="Multiply, no explanation",
+                prompt="What is 4738 times 2913? Reply with only the final number, no explanation.",
+                expected="13,801,794",
+            ),
+        ],
+        explanation=(
+            "The correct answer is 13,801,794. The model doesn't have a scratchpad "
+            "for arithmetic — no working memory that reliably carries a digit from one "
+            "step to the next the way you would on paper. Generating an answer is a "
+            "sequence of forward passes producing one token at a time, and each of "
+            "those tokens is a plausibility judgment (\"what number is likely to come "
+            "next, given a multiplication like this\"), not the result of an internal "
+            "calculator. Asking for the bare number removes the one thing that "
+            "sometimes helps: writing out the long-multiplication steps gives the "
+            "model a place to externalize intermediate results as text it can then "
+            "read back, closer to an actual scratchpad. Without that, wrong answers "
+            "aren't even wrong the same way twice — rerun this and you'll typically "
+            "get a different incorrect number each time, which is itself a sign "
+            "there's no real computation being repeated, just a plausible-looking "
+            "guess."
+        ),
+    ),
 ]
 
 

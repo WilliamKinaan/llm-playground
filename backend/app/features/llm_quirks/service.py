@@ -5,6 +5,7 @@ client stays generic and reusable across features.
 
 import json
 import queue
+import re
 import threading
 from collections.abc import Iterator
 
@@ -12,6 +13,14 @@ from app.llm_client import run_chat_completion, stream_chat_completion
 
 from .cases import CASES, get_case_by_id
 from .schemas import CaseDetail, CaseSummary, RunResponse, VariantPrompt, VariantResult
+
+
+def _normalize_for_comparison(text: str) -> str:
+    """Loosen an exact-match check just enough to survive formatting noise
+    (commas, trailing periods, stray whitespace) without turning it into a
+    fuzzy/substring match.
+    """
+    return re.sub(r"[,.\s]", "", text).lower()
 
 
 def list_cases() -> list[CaseSummary]:
@@ -46,7 +55,9 @@ def run_case(case_id: str) -> RunResponse | None:
 
         matches_expected = None
         if variant.expected is not None:
-            matches_expected = output.strip().lower() == variant.expected.strip().lower()
+            matches_expected = _normalize_for_comparison(output) == _normalize_for_comparison(
+                variant.expected
+            )
 
         results.append(
             VariantResult(
