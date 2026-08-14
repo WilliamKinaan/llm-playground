@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Token Efficiency — LLM Playground</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <nav class="breadcrumb"><a href="/">&larr; LLM Playground</a></nav>
+
+  <header>
+    <h1>Token Efficiency</h1>
+    <p>
+      Ask a question about our products and get two answers back &mdash; Option 1
+      is tuned to use fewer tokens, Option 2 isn't. Both should give you a good
+      answer. Click Compare to see both live, then click Why? to see what's
+      actually happening behind each one.
+    </p>
+  </header>
+
+  <main>
+    <div class="panel">
+      <label for="sample-select"><strong>Try a sample question</strong></label>
+      <select id="sample-select"></select>
+
+      <div class="hint">
+        Or write your own &mdash;
+        <a href="catalog/" target="_blank" rel="noopener noreferrer">see what we sell &rarr;</a>
+        for ideas.
+      </div>
+      <textarea id="query-input" placeholder="Type your own question about our products..."></textarea>
+
+      <button id="compare-btn">Compare</button>
+      <div id="error" class="error" hidden></div>
+    </div>
+
+    <div id="results" class="results" hidden>
+      <div class="panel">
+        <div class="category-row">
+          <span class="name">Option 1 &mdash; Token Friendly</span>
+          <span class="bar-track"><span id="option1-bar" class="bar-fill"></span></span>
+          <span id="option1-bar-label" class="score"></span>
+        </div>
+        <div class="category-row">
+          <span class="name">Option 2 &mdash; Not Optimized</span>
+          <span class="bar-track"><span id="option2-bar" class="bar-fill"></span></span>
+          <span id="option2-bar-label" class="score"></span>
+        </div>
+        <div id="savings-line" class="hint"></div>
+
+        <div class="variant-grid">
+          <div class="variant-card">
+            <div class="variant-label">Option 1 &mdash; Token Friendly</div>
+            <div id="option1-output" class="variant-output placeholder">Click Compare to run this live.</div>
+            <div id="option1-usage" class="hint"></div>
+          </div>
+
+          <div class="variant-card">
+            <div class="variant-label">Option 2 &mdash; Not Optimized</div>
+            <div id="option2-output" class="variant-output placeholder">Click Compare to run this live.</div>
+            <div id="option2-usage" class="hint"></div>
+          </div>
+        </div>
+
+        <button id="why-btn" class="button-secondary" hidden>Why?</button>
+
+        <div id="explanation" class="explanation-panel" hidden>
+          <p>
+            <strong>Option 2 &mdash; Not Optimized</strong> sends your question straight
+            to the model together with our entire product catalog, every single time,
+            and waits for one reply:
+          </p>
+          <svg viewBox="0 0 460 90" class="flow-diagram" role="img" aria-label="User to backend to model, one call">
+            <defs>
+              <marker id="arrow1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="flow-arrowhead" />
+              </marker>
+            </defs>
+            <rect x="10" y="30" width="110" height="40" rx="8" class="flow-box" />
+            <text x="65" y="55" class="flow-text">User (UI)</text>
+            <line x1="120" y1="50" x2="185" y2="50" class="flow-line" marker-end="url(#arrow1)" />
+            <rect x="190" y="30" width="90" height="40" rx="8" class="flow-box" />
+            <text x="235" y="55" class="flow-text">Backend</text>
+            <line x1="280" y1="50" x2="345" y2="50" class="flow-line" marker-end="url(#arrow1)" />
+            <rect x="350" y="30" width="100" height="40" rx="8" class="flow-box flow-box-accent" />
+            <text x="400" y="55" class="flow-text">Model</text>
+          </svg>
+
+          <p>
+            <strong>Option 1 &mdash; Token Friendly</strong> has the backend talk to the
+            model more than once behind the scenes: first a cheap call figures out
+            what you're actually asking about, then a further call (or calls)
+            answers using only that relevant slice of the catalog:
+          </p>
+          <svg viewBox="0 0 460 130" class="flow-diagram" role="img" aria-label="User to backend to model, multiple calls">
+            <defs>
+              <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="flow-arrowhead" />
+              </marker>
+            </defs>
+            <rect x="10" y="45" width="110" height="40" rx="8" class="flow-box" />
+            <text x="65" y="70" class="flow-text">User (UI)</text>
+            <line x1="120" y1="65" x2="185" y2="65" class="flow-line" marker-end="url(#arrow2)" />
+            <rect x="190" y="45" width="90" height="40" rx="8" class="flow-box" />
+            <text x="235" y="70" class="flow-text">Backend</text>
+
+            <line x1="280" y1="55" x2="345" y2="20" class="flow-line" marker-end="url(#arrow2)" />
+            <rect x="350" y="0" width="100" height="40" rx="8" class="flow-box flow-box-accent" />
+            <text x="400" y="25" class="flow-text">Model call</text>
+
+            <line x1="280" y1="75" x2="345" y2="110" class="flow-line" marker-end="url(#arrow2)" />
+            <rect x="350" y="90" width="100" height="40" rx="8" class="flow-box flow-box-accent" />
+            <text x="400" y="115" class="flow-text">Model call</text>
+          </svg>
+          <div class="hint">&hellip;and possibly more, in future, as the backend gets smarter about what it asks for.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/assets/js/api.js"></script>
+  <script src="token-efficiency.js"></script>
+</body>
+</html>

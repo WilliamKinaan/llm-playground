@@ -6,12 +6,22 @@ its own. Add new thin helpers here (e.g. a chat-completion wrapper) as new
 features need them, so the request/response shape lives in one place.
 """
 
+from dataclasses import dataclass
 from functools import lru_cache
+from typing import Any
 
 from openai import OpenAI
 from openai.types.moderation_create_response import ModerationCreateResponse
 
 from app.config import get_settings
+
+
+@dataclass(frozen=True)
+class ChatResult:
+    content: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
 
 
 @lru_cache
@@ -38,6 +48,38 @@ def run_chat_completion(prompt: str, temperature: float = 0) -> str:
         temperature=temperature,
     )
     return response.choices[0].message.content
+
+
+def run_chat(
+    messages: list[dict[str, Any]],
+    temperature: float = 0,
+    json_mode: bool = False,
+    max_tokens: int = 500,
+) -> ChatResult:
+    """Send a full message list (system/user turns) and return both the reply
+    and the API's real token usage. Unlike `run_chat_completion` (single
+    user-string prompt, no usage reported), this is for features that need
+    multi-turn control and/or want to display/compare token counts.
+    """
+    settings = get_settings()
+    client = get_client()
+    kwargs: dict[str, Any] = {
+        "model": settings.mistral_chat_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    response = client.chat.completions.create(**kwargs)
+    usage = response.usage
+    return ChatResult(
+        content=response.choices[0].message.content,
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        total_tokens=usage.total_tokens,
+    )
 
 
 def stream_chat_completion(prompt: str, temperature: float = 0):

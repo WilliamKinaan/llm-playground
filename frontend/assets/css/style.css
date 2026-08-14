@@ -113,6 +113,19 @@ textarea {
   font-size: 0.95rem;
 }
 
+select {
+  display: block;
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  margin-top: 0.5rem;
+}
+
 button {
   margin-top: 0.85rem;
   background: var(--accent);
@@ -300,4 +313,47 @@ button:disabled {
 
 .explanation-panel a {
   color: var(--accent);
+}
+
+.catalog-category + .catalog-category {
+  margin-top: 1rem;
+}
+
+.catalog-category h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+.flow-diagram {
+  width: 100%;
+  height: auto;
+  margin: 0.75rem 0 1.25rem;
+}
+
+.flow-box {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.flow-box-accent {
+  fill: rgba(108, 140, 255, 0.12);
+  stroke: var(--accent);
+}
+
+.flow-text {
+  fill: var(--text);
+  font-size: 13px;
+  text-anchor: middle;
+  font-family: inherit;
+}
+
+.flow-line {
+  stroke: var(--text-dim);
+  stroke-width: 1.5;
+  fill: none;
+}
+
+.flow-arrowhead {
+  fill: var(--text-dim);
 }

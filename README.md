@@ -8,6 +8,9 @@ Currently included:
 - **LLM Quirks** — small, reproducible cases where a model's behavior isn't what
   you'd expect (e.g. reversing "lollipop" breaks depending on how the word is
   tokenized), run live against the model on demand.
+- **Token Efficiency** — compares classify-then-answer (2 small calls) against
+  stuffing an entire product catalog into one prompt (1 big call), showing real
+  token usage from the API for both, side by side.
 
 ## Structure
 
