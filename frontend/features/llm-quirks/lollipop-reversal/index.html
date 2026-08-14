@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LLM Quirks — LLM Playground</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <nav class="breadcrumb"><a href="/features/llm-quirks/">&larr; LLM Quirks</a></nav>
+
+  <header>
+    <h1 id="case-title">Loading&hellip;</h1>
+    <p id="case-description"></p>
+  </header>
+
+  <main>
+    <div id="quirk-root" data-case-id="lollipop-reversal" class="panel">
+      <div id="variant-list" class="variant-grid"></div>
+
+      <button id="go-btn">Go</button>
+      <button id="why-btn" class="button-secondary" hidden>Why?</button>
+
+      <div id="explanation" class="explanation-panel" hidden></div>
+      <div id="error" class="error" hidden></div>
+    </div>
+  </main>
+
+  <script src="/assets/js/api.js"></script>
+  <script src="../case.js"></script>
+</body>
+</html>

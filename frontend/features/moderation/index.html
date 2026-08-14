@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Content Moderation — LLM Playground</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <nav class="breadcrumb"><a href="/">&larr; LLM Playground</a></nav>
+
+  <header>
+    <h1>Content Moderation</h1>
+    <p>Runs your text through Mistral's moderation model.</p>
+  </header>
+
+  <main>
+    <div class="panel">
+      <label for="text-input"><strong>Text to check</strong></label>
+      <textarea id="text-input" placeholder="Type or paste some text..."></textarea>
+      <div class="hint">Nothing is stored — this just calls the moderation API and shows the result.</div>
+      <button id="submit-btn">Check text</button>
+
+      <div id="results" class="results" hidden>
+        <span id="badge" class="badge"></span>
+        <div id="categories"></div>
+      </div>
+
+      <div id="error" class="error" hidden></div>
+    </div>
+  </main>
+
+  <script src="/assets/js/api.js"></script>
+  <script src="moderation.js"></script>
+</body>
+</html>
