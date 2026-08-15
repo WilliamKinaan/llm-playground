@@ -9,7 +9,7 @@ A small collection of LLM feature demos, each with its own page, sharing one Fas
 - **Content Moderation** — checks text against Mistral's moderation model.
 - **LLM Quirks** — small, reproducible cases where a model's behavior isn't what you'd expect, run live against the model on demand.
 - **Token Efficiency** — compares classify-then-answer (2 small calls) against stuffing an entire product catalog into one prompt (1 big call), showing real token usage from the API for both, side by side.
-- **Tool Calling** — the user defines functions (name, description, parameters, and a fixed mock result) in the browser; the model decides whether/what to call, and each call resolves to that user-typed mock result verbatim (no real code execution).
+- **Tool Calling** — two kinds of functions the model can call, no real code execution either way: **custom** (user-authored name/description/answer, no parameters, so the one fixed answer is always right) and **template** (pre-built by us — currently `get_current_weather` — with a fixed parameter and condition keys; the user can only edit the value returned per key, plus a fallback).
 
 ## Running it
 
@@ -42,6 +42,8 @@ All config (API key, base URL, model names) lives in `backend/app/config.py` via
 **Streaming**: SSE is used only by LLM Quirks, and only for cases with `streaming=True` (currently just fox-chicken-grain — reserved for answers slow enough that a blank wait is bad UX). Backend side: a generator yields `data: {...}\n\n` lines via `StreamingResponse`; each prompt variant runs on its own thread against a shared queue (the openai client is blocking), so variants stream concurrently rather than one after another. Frontend side: `apiPostStream` in `api.js` parses that SSE framing back into JSON messages. Token Efficiency does *not* use SSE — its two pipelines (chained vs. single-shot) are run concurrently with `ThreadPoolExecutor(max_workers=2)` instead, so the wait is the slower call, not the sum of both.
 
 **Adding an LLM Quirks case**: append one `CaseDefinition` to `CASES` in `backend/app/features/llm_quirks/cases.py` — router, schemas, and service are all driven off that registry, no other backend file needs to change. Set `streaming=True` only if the answer is slow enough (long chain-of-thought) that a blank wait would be bad UX. Set `expected` on a variant only when there's one unambiguous correct answer (enables the `matches_expected` check).
+
+**Adding a Tool Calling template**: append one `FunctionTemplate` to `FUNCTION_TEMPLATES` in `backend/app/features/tool_calling/templates.py` (same single-source-of-truth pattern as `cases.py`/`catalog.py`) — the `GET /templates` endpoint, the frontend's "Add template" picker, and the condition-matching logic in `service.py` all read off that registry, no other file needs to change.
 
 ## Deployment
 

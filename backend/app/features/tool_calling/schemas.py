@@ -1,44 +1,66 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from .templates import get_template_by_id
 
 # Mirrors OpenAI/Mistral's function-name constraints (letters, digits,
 # underscores, dashes).
 NAME_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 
 
-class ParameterDefinition(BaseModel):
-    """One row from the frontend's guided parameter builder. `service.py`
-    assembles these into an actual JSON Schema `parameters` object - this is
-    just the structured shape the user fills in.
+class CustomFunctionDefinition(BaseModel):
+    """A fully user-authored function: name, description, and one fixed
+    answer. Deliberately parameter-less - a single static answer only makes
+    sense when there's no argument for it to (incorrectly) ignore. Functions
+    whose answer should vary by argument are template functions instead.
     """
 
-    name: str = Field(pattern=NAME_PATTERN)
-    type: Literal["string", "number", "integer", "boolean"]
-    description: str = ""
-    required: bool = False
-    # Raw comma-split strings from the UI's "allowed values" field; cast to
-    # match `type` when the JSON Schema is built.
-    enum: list[str] = Field(default_factory=list)
-
-
-class FunctionDefinition(BaseModel):
-    """A function the user defined for the model to call. There is no real
-    implementation behind it - `mock_result` is returned verbatim whenever
-    the model calls this function, regardless of the arguments it chose.
-    """
-
+    kind: Literal["custom"] = "custom"
     name: str = Field(pattern=NAME_PATTERN)
     description: str
-    parameters: list[ParameterDefinition] = Field(default_factory=list)
     mock_result: str
+
+
+class TemplateFunctionInstance(BaseModel):
+    """One of our pre-built functions (name/description/parameter/condition
+    keys fixed by `templates.py`), with the user's edited values. The user
+    can change what each key returns, not the keys themselves.
+    """
+
+    kind: Literal["template"] = "template"
+    template_id: str
+    values: dict[str, str] = Field(default_factory=dict)  # condition key -> value
+    fallback_value: str = ""
+
+
+FunctionInput = Annotated[
+    CustomFunctionDefinition | TemplateFunctionInstance,
+    Field(discriminator="kind"),
+]
 
 
 class ToolCallingRequest(BaseModel):
     query: str = Field(min_length=1)
     # Zero functions is allowed on purpose - it's a valid "no tools
     # available" demo, not a required minimum.
-    functions: list[FunctionDefinition] = Field(default_factory=list)
+    functions: list[FunctionInput] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_functions(self) -> "ToolCallingRequest":
+        seen_names: set[str] = set()
+        for fn in self.functions:
+            if fn.kind == "custom":
+                name = fn.name
+            else:
+                template = get_template_by_id(fn.template_id)
+                if template is None:
+                    raise ValueError(f"Unknown template_id: {fn.template_id}")
+                name = template.name
+            if name in seen_names:
+                raise ValueError(f"Duplicate function name: {name}")
+            seen_names.add(name)
+        return self
 
 
 class ToolCallRecord(BaseModel):
@@ -55,3 +77,22 @@ class ToolCallRecord(BaseModel):
 class ToolCallingResponse(BaseModel):
     tool_calls: list[ToolCallRecord]  # empty if the model answered directly
     final_answer: str
+
+
+class TemplateConditionOut(BaseModel):
+    key: str
+    default_value: str
+
+
+class FunctionTemplateOut(BaseModel):
+    """What the frontend needs to render the "Add template" picker and
+    pre-fill a template card's editable fields.
+    """
+
+    id: str
+    name: str
+    description: str
+    parameter_name: str
+    parameter_description: str
+    conditions: list[TemplateConditionOut]
+    default_fallback: str

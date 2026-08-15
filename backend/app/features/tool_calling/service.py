@@ -1,7 +1,8 @@
-"""Tool Calling business logic: turns user-defined function definitions into
-an OpenAI-compatible `tools` schema, lets the model decide whether/what to
-call, and resolves each call to a fixed mock result the user supplied - no
-real code execution, no argument interpolation.
+"""Tool Calling business logic: turns user-defined functions into an
+OpenAI-compatible `tools` schema, lets the model decide whether/what to
+call, and resolves each call - either a custom function's fixed answer, or
+a template function's per-key value (falling back when the model's argument
+doesn't match any known key). No real code execution anywhere.
 
 Scoped to a single round of tool-calling (matches the aspiration script this
 was ported from): the second call that produces the final answer is made
@@ -9,68 +10,111 @@ without `tools`, so the model cannot request another round.
 """
 
 import json
+from collections.abc import Callable
 
 from app.llm_client import ChatResult, run_chat
 
-from .schemas import FunctionDefinition, ParameterDefinition, ToolCallRecord, ToolCallingResponse
+from .schemas import (
+    CustomFunctionDefinition,
+    FunctionInput,
+    FunctionTemplateOut,
+    TemplateConditionOut,
+    TemplateFunctionInstance,
+    ToolCallRecord,
+    ToolCallingResponse,
+)
+from .templates import FUNCTION_TEMPLATES, get_template_by_id
+
+# Resolves a call's parsed arguments to the text sent back to the model.
+Resolver = Callable[[dict | None], str]
 
 
-def _cast_enum_value(raw: str, param_type: str):
-    """Cast one comma-split enum string to match its declared JSON Schema
-    type, falling back to the raw string if it doesn't parse - a value that
-    silently doesn't match the type is worse than a string left as a string.
-    """
-    if param_type == "integer":
-        try:
-            return int(raw)
-        except ValueError:
-            return raw
-    if param_type == "number":
-        try:
-            return float(raw)
-        except ValueError:
-            return raw
-    if param_type == "boolean":
-        return raw.strip().lower() in ("true", "1", "yes")
-    return raw
-
-
-def _build_json_schema_parameters(params: list[ParameterDefinition]) -> dict:
-    properties: dict[str, dict] = {}
-    required: list[str] = []
-    for p in params:
-        prop: dict = {"type": p.type}
-        if p.description:
-            prop["description"] = p.description
-        if p.enum:
-            prop["enum"] = [_cast_enum_value(v.strip(), p.type) for v in p.enum if v.strip()]
-        properties[p.name] = prop
-        if p.required:
-            required.append(p.name)
-
-    schema: dict = {"type": "object", "properties": properties}
-    if required:
-        schema["required"] = required
-    return schema
-
-
-def _build_tool_schemas(functions: list[FunctionDefinition]) -> list[dict]:
+def list_function_templates() -> list[FunctionTemplateOut]:
     return [
-        {
-            "type": "function",
-            "function": {
-                "name": f.name,
-                "description": f.description,
-                "parameters": _build_json_schema_parameters(f.parameters),
-            },
-        }
-        for f in functions
+        FunctionTemplateOut(
+            id=t.id,
+            name=t.name,
+            description=t.description,
+            parameter_name=t.parameter_name,
+            parameter_description=t.parameter_description,
+            conditions=[
+                TemplateConditionOut(key=c.key, default_value=c.default_value) for c in t.conditions
+            ],
+            default_fallback=t.default_fallback,
+        )
+        for t in FUNCTION_TEMPLATES
     ]
 
 
-def run_tool_calling(query: str, functions: list[FunctionDefinition]) -> ToolCallingResponse:
-    functions_by_name = {f.name: f for f in functions}
-    tool_schemas = _build_tool_schemas(functions) if functions else None
+def _build_tool_schema(fn: FunctionInput) -> dict:
+    if isinstance(fn, CustomFunctionDefinition):
+        return {
+            "type": "function",
+            "function": {
+                "name": fn.name,
+                "description": fn.description,
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+
+    template = get_template_by_id(fn.template_id)
+    return {
+        "type": "function",
+        "function": {
+            "name": template.name,
+            "description": template.description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    template.parameter_name: {
+                        "type": "string",
+                        "description": template.parameter_description,
+                        # Nudges the model to pick one of our exact keys. Not a
+                        # hard guarantee across providers, so _template_resolver
+                        # still normalizes and matches server-side.
+                        "enum": [c.key for c in template.conditions],
+                    }
+                },
+                "required": [template.parameter_name],
+            },
+        },
+    }
+
+
+def _custom_resolver(fn: CustomFunctionDefinition) -> Resolver:
+    def resolve(_args: dict | None) -> str:
+        return fn.mock_result
+
+    return resolve
+
+
+def _template_resolver(fn: TemplateFunctionInstance) -> Resolver:
+    template = get_template_by_id(fn.template_id)
+    normalized_values = {
+        c.key.strip().casefold(): fn.values.get(c.key, c.default_value) for c in template.conditions
+    }
+
+    def resolve(args: dict | None) -> str:
+        raw = (args or {}).get(template.parameter_name)
+        if isinstance(raw, str):
+            match = normalized_values.get(raw.strip().casefold())
+            if match is not None:
+                return match
+        return fn.fallback_value
+
+    return resolve
+
+
+def _build_name_and_resolver(fn: FunctionInput) -> tuple[str, Resolver]:
+    if isinstance(fn, CustomFunctionDefinition):
+        return fn.name, _custom_resolver(fn)
+    template = get_template_by_id(fn.template_id)
+    return template.name, _template_resolver(fn)
+
+
+def run_tool_calling(query: str, functions: list[FunctionInput]) -> ToolCallingResponse:
+    tool_schemas = [_build_tool_schema(fn) for fn in functions] or None
+    resolvers_by_name = dict(_build_name_and_resolver(fn) for fn in functions)
 
     messages = [{"role": "user", "content": query}]
 
@@ -106,8 +150,8 @@ def run_tool_calling(query: str, functions: list[FunctionDefinition]) -> ToolCal
         except (json.JSONDecodeError, TypeError):
             pass  # keep parsed_args=None; raw_arguments is still recorded below
 
-        defined = functions_by_name.get(tc.name)
-        if defined is None:
+        resolver = resolvers_by_name.get(tc.name)
+        if resolver is None:
             matched = False
             # Told to the model itself as the tool result, not raised as a
             # server error - the model asked for something that doesn't
@@ -115,7 +159,7 @@ def run_tool_calling(query: str, functions: list[FunctionDefinition]) -> ToolCal
             result_text = f"Unknown function: {tc.name}"
         else:
             matched = True
-            result_text = defined.mock_result  # verbatim, no interpolation
+            result_text = resolver(parsed_args)
 
         records.append(
             ToolCallRecord(

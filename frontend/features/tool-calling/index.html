@@ -11,20 +11,25 @@
 
   <header>
     <h1>Tool Calling</h1>
-    <p>Define functions the model can call. OpenAI calls this "functions" — Mistral
-      (and the OpenAI-compatible API surface generally) calls the exact same thing
-      "tools". Same JSON shape, same behavior, different name.</p>
+    <p>Add your own functions, describe when they should be called, and give each
+      one an answer. Pick from a few ready-made lookup functions to see the model
+      plug a real value into a real parameter. Then ask a question and watch which
+      ones it reaches for.</p>
   </header>
 
   <main>
     <div class="panel">
       <strong>Functions the model can call</strong>
       <div id="functions-list"></div>
-      <button id="add-function-btn" class="button-secondary" type="button">Add function</button>
-      <div class="hint">Each function needs a name, description, parameters, and a fixed
-        mock result — when the model calls it, that mock text is returned verbatim as
-        the result, regardless of what arguments the model chose. Nothing is really
-        executed.</div>
+      <div class="add-function-controls">
+        <button id="add-custom-btn" class="button-secondary" type="button">Add custom function</button>
+        <select id="add-template-select">
+          <option value="" disabled selected>Add template...</option>
+        </select>
+      </div>
+      <div class="hint">Custom functions: you write a name, description, and one fixed
+        answer. Template functions: pre-built by us — you can only edit the answer
+        returned per case, plus a fallback. Nothing is really executed either way.</div>
     </div>
 
     <div class="panel">

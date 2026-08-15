@@ -387,9 +387,9 @@ button:disabled {
   flex: 1;
 }
 
-.function-card-header button,
-.param-row button {
+.function-card-header button {
   margin-top: 0;
+  margin-left: auto;
 }
 
 .function-card textarea {
@@ -402,23 +402,53 @@ button:disabled {
   font-size: 0.9rem;
 }
 
-.param-row {
+.function-card-kind-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+}
+
+.fn-fixed-name {
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.add-function-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.add-function-controls select {
+  width: auto;
+  margin-top: 0;
+}
+
+.template-conditions {
+  margin-top: 0.5rem;
+}
+
+.template-condition-row {
   display: grid;
-  grid-template-columns: 1fr 100px 1.5fr auto 1.5fr auto;
-  gap: 0.5rem;
+  grid-template-columns: 120px 1fr;
+  gap: 0.75rem;
   align-items: center;
   margin-top: 0.5rem;
 }
 
-.param-row select {
-  margin-top: 0;
+.template-condition-key {
+  color: var(--text-dim);
+  font-size: 0.9rem;
 }
 
-.param-required {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.85rem;
-  color: var(--text-dim);
-  white-space: nowrap;
+.template-fallback-row {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
 }

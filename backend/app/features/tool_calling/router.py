@@ -1,9 +1,14 @@
 from fastapi import APIRouter
 
-from .schemas import ToolCallingRequest, ToolCallingResponse
-from .service import run_tool_calling
+from .schemas import FunctionTemplateOut, ToolCallingRequest, ToolCallingResponse
+from .service import list_function_templates, run_tool_calling
 
 router = APIRouter(prefix="/api/tool-calling", tags=["tool-calling"])
+
+
+@router.get("/templates", response_model=list[FunctionTemplateOut])
+def templates() -> list[FunctionTemplateOut]:
+    return list_function_templates()
 
 
 @router.post("/run", response_model=ToolCallingResponse)
