@@ -9,6 +9,7 @@ A small collection of LLM feature demos, each with its own page, sharing one Fas
 - **Content Moderation** — checks text against Mistral's moderation model.
 - **LLM Quirks** — small, reproducible cases where a model's behavior isn't what you'd expect, run live against the model on demand.
 - **Token Efficiency** — compares classify-then-answer (2 small calls) against stuffing an entire product catalog into one prompt (1 big call), showing real token usage from the API for both, side by side.
+- **Tool Calling** — the user defines functions (name, description, parameters, and a fixed mock result) in the browser; the model decides whether/what to call, and each call resolves to that user-typed mock result verbatim (no real code execution).
 
 ## Running it
 
@@ -30,7 +31,7 @@ Requires **Python 3.10+** (the codebase uses `X | None` union type hints) — us
 - `service.py` — the actual business logic.
 - optionally a data file (e.g. `cases.py`, `catalog.py`) acting as the single source of truth for that feature's content, so adding a case/product means editing data, not routing/rendering code.
 
-New feature routers are registered by hand in `backend/app/main.py`. All features share one Mistral client (`backend/app/llm_client.py`) — Mistral exposes an OpenAI-compatible API, so it's just `openai.OpenAI` pointed at Mistral's base URL. Add new thin wrappers there (not per-feature) as new call shapes are needed; there are already four: `run_moderation`, `run_chat_completion` (single-prompt, no usage), `run_chat` (full message list, returns token usage — use this when a feature needs to display/compare token counts), and `stream_chat_completion` (yields text as it arrives, for slow chain-of-thought answers).
+New feature routers are registered by hand in `backend/app/main.py`. All features share one Mistral client (`backend/app/llm_client.py`) — Mistral exposes an OpenAI-compatible API, so it's just `openai.OpenAI` pointed at Mistral's base URL. Add new thin wrappers there (not per-feature) as new call shapes are needed; there are already four: `run_moderation`, `run_chat_completion` (single-prompt, no usage), `run_chat` (full message list, returns token usage — use this when a feature needs to display/compare token counts, and optionally pass `tools` to enable function/tool calling, surfaced back on `ChatResult.tool_calls`), and `stream_chat_completion` (yields text as it arrives, for slow chain-of-thought answers).
 
 All config (API key, base URL, model names) lives in `backend/app/config.py` via `pydantic-settings`, read from `.env`. Feature code should always go through `get_settings()` rather than hardcoding model names, so there's one place to change credentials/models.
 

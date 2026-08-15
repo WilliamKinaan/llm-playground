@@ -126,6 +126,21 @@ select {
   margin-top: 0.5rem;
 }
 
+input[type="text"],
+input[type="number"] {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
 button {
   margin-top: 0.85rem;
   background: var(--accent);
@@ -356,4 +371,54 @@ button:disabled {
 
 .flow-arrowhead {
   fill: var(--text-dim);
+}
+
+.function-card {
+  margin-top: 1rem;
+}
+
+.function-card-header {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.function-card-header .fn-name {
+  flex: 1;
+}
+
+.function-card-header button,
+.param-row button {
+  margin-top: 0;
+}
+
+.function-card textarea {
+  margin-top: 0.5rem;
+}
+
+.function-card label {
+  display: block;
+  margin-top: 0.85rem;
+  font-size: 0.9rem;
+}
+
+.param-row {
+  display: grid;
+  grid-template-columns: 1fr 100px 1.5fr auto 1.5fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.param-row select {
+  margin-top: 0;
+}
+
+.param-required {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  white-space: nowrap;
 }

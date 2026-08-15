@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tool Calling — LLM Playground</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <nav class="breadcrumb"><a href="/">&larr; LLM Playground</a></nav>
+
+  <header>
+    <h1>Tool Calling</h1>
+    <p>Define functions the model can call. OpenAI calls this "functions" — Mistral
+      (and the OpenAI-compatible API surface generally) calls the exact same thing
+      "tools". Same JSON shape, same behavior, different name.</p>
+  </header>
+
+  <main>
+    <div class="panel">
+      <strong>Functions the model can call</strong>
+      <div id="functions-list"></div>
+      <button id="add-function-btn" class="button-secondary" type="button">Add function</button>
+      <div class="hint">Each function needs a name, description, parameters, and a fixed
+        mock result — when the model calls it, that mock text is returned verbatim as
+        the result, regardless of what arguments the model chose. Nothing is really
+        executed.</div>
+    </div>
+
+    <div class="panel">
+      <label for="query-input"><strong>Your question</strong></label>
+      <textarea id="query-input" placeholder="Ask something that might need one of the functions above..."></textarea>
+      <button id="run-btn">Run</button>
+      <div id="error" class="error" hidden></div>
+    </div>
+
+    <div id="results" class="results" hidden>
+      <div class="panel">
+        <div id="tool-calls-section">
+          <strong>Tool calls</strong>
+          <div id="tool-calls-list" class="variant-grid"></div>
+        </div>
+        <div id="no-tool-calls-hint" class="hint" hidden>The model answered directly without calling any function.</div>
+        <div class="explanation-panel">
+          <strong>Final answer</strong>
+          <div id="final-answer"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/assets/js/api.js"></script>
+  <script src="tool-calling.js"></script>
+</body>
+</html>

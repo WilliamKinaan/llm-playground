@@ -11,6 +11,10 @@ Currently included:
 - **Token Efficiency** — compares classify-then-answer (2 small calls) against
   stuffing an entire product catalog into one prompt (1 big call), showing real
   token usage from the API for both, side by side.
+- **Tool Calling** — define functions the model can call (OpenAI calls it
+  "functions", Mistral/the OpenAI-compatible API calls the same concept "tools");
+  the model picks which to call and with what arguments, you supply a fixed mock
+  result per function.
 
 ## Structure
 
