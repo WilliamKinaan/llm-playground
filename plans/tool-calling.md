@@ -12,189 +12,234 @@ chat completion, inspect `response.choices[0].message.tool_calls`, execute each 
 append `role:"tool"` messages, then a second completion for the final answer.
 
 Unlike that aspiration script (real, hardcoded Python functions behind each tool), this
-feature lets the **user define their own functions live in the browser** — name,
-description, parameters, and a fixed mock return value — with no real code execution.
+feature lets the **user define their own functions live in the browser** — with no real
+code execution. The design went through two iterations:
 
-Agreed with user before planning:
-1. **Tool execution = user-typed static mock response.** When the model calls a
-   function, the backend returns the user's mock text verbatim as the tool result — no
-   argument interpolation, no second LLM call to fabricate a result, no real code
-   execution (keeps this safe: no arbitrary-code-execution risk from user input).
-2. **Parameters UI = guided row-based builder**, not a raw JSON-Schema textarea. The
-   user adds parameter rows (name, type, description, required, optional enum values);
-   the **backend** assembles the actual JSON Schema from that structured list — single
-   source of truth for that shape, consistent with this repo's habit of keeping such
-   logic server-side.
+**v1** (initial build) had one function shape: arbitrary name/description/parameters
+plus a single static mock result returned regardless of what arguments the model
+passed. That was a gap for anything where the *result* should depend on the argument
+(e.g. "weather in Paris" vs. "weather in Amsterdam" should differ, but always got the
+same mock text back).
+
+**v2** (current) splits functions into two kinds:
+- **Custom** — fully user-authored (name, description, one answer), now strictly
+  **parameter-less**, so the one static answer is always the right one — there's no
+  argument for it to (incorrectly) ignore anymore.
+- **Template** — pre-built by us, with a fixed name/description/parameter and a fixed
+  set of condition keys. The user can only edit the **value** returned per key, plus a
+  fallback for anything else — not the keys themselves. Currently one template ships:
+  `get_current_weather(location)` with keys `Paris`, `Amsterdam`, `Boston`.
+
+Decisions locked in for v2:
+1. **Tool execution is still static, per-kind** — custom always returns its one answer;
+   template looks up the model's argument against the user's edited key→value table and
+   falls back if nothing matches. Still no real code execution, no LLM-simulated
+   results.
+2. **Template keys are fixed by us, not user-defined.** A future "user-defined
+   condition table" feature (see below) would let the user build their own key→value
+   list from scratch instead of only picking from a shipped template — deliberately not
+   built now.
+3. **Key matching**: the parameter's JSON Schema `enum` is set to the template's exact
+   keys (nudges the model to pick one), *and* the server independently normalizes
+   (`.strip().casefold()`) and matches against those keys before falling back — enum
+   isn't a hard guarantee across providers, so this is defense-in-depth, not redundant.
+4. **One instance per template.** "Add function" is two controls: "Add custom function"
+   and an "Add template" dropdown limited to templates not already on the page; a
+   template disappears from the dropdown once added, reappears once its card is
+   removed.
+5. The v1 generic parameter-builder (arbitrary name/type/description/required/enum
+   rows per function) was **deleted**, not kept alongside — it became dead weight once
+   custom functions can't take parameters, and templates don't need it either since
+   their parameter is fixed. See "What's possible next" below for how it could return
+   in a different, narrower form.
 
 Naming: backend slice `backend/app/features/tool_calling/` (underscore, importable —
 matches `token_efficiency`); frontend folder `frontend/features/tool-calling/` (hyphen —
 matches `token-efficiency`, `llm-quirks`); route prefix `/api/tool-calling`; UI title
-**"Tool Calling"**, with a one-line blurb noting the Mistral/OpenAI naming difference.
+**"Tool Calling"**.
+
+Copy (homepage tile + page blurb) was reworded from the original technical
+Mistral/OpenAI-naming framing to something more inviting and non-technical, per user
+feedback — see current `frontend/index.html` and
+`frontend/features/tool-calling/index.html` for the live wording rather than
+duplicating it here (it's been hand-tuned a couple of times already).
 
 ## Backend
 
-- **`backend/app/llm_client.py`**: extend `run_chat`, don't add a new function — it
-  already takes a full message list and returns usage, and tool support is an additive,
-  optional capability on the same call shape.
-  - Add a `ToolCall` frozen dataclass: `id: str`, `name: str`, `arguments: str` (raw
-    JSON string as returned by the model — not parsed here; the model can return invalid
-    JSON or hallucinated parameters, so parsing/validation is `service.py`'s job).
-  - Add `tool_calls: tuple[ToolCall, ...] = ()` to `ChatResult`.
-  - Add `tools: list[dict[str, Any]] | None = None` param to `run_chat`. Only set
-    `kwargs["tools"]` when `tools` is truthy — omit the kwarg entirely otherwise (some
-    providers reject `tools: []`; keeps existing callers like `token_efficiency`
-    byte-identical).
-  - After the call, extract `message.tool_calls` (empty list if `None`) into the
-    `ToolCall` tuple.
-  - **Fix `content=message.content or ""`** when building `ChatResult` — the OpenAI SDK
-    types `message.content` as nullable and it *is* `None` on tool-call turns. Normalize
-    at the source rather than widening `ChatResult.content` to `str | None` (which would
-    force a null-check onto the two existing callers that never hit this path).
+- **`backend/app/llm_client.py`**: `run_chat` carries an optional `tools` param and a
+  `tool_calls: tuple[ToolCall, ...]` field on `ChatResult` (`ToolCall` = `id`, `name`,
+  raw `arguments` JSON string, unparsed — parsing/validation is `service.py`'s job).
+  `content` is normalized to `""` when the SDK returns `None` (which happens on
+  tool-call turns). Unchanged since v1.
 
-- **New feature module `backend/app/features/tool_calling/`**:
-  - `schemas.py`:
-    - `ParameterDefinition` — `name` (pattern `^[A-Za-z0-9_-]{1,64}$`),
-      `type: Literal["string","number","integer","boolean"]`, `description: str = ""`,
-      `required: bool = False`, `enum: list[str] = []` (raw comma-split strings from the
-      UI; cast to the right type in `service.py`).
-    - `FunctionDefinition` — `name` (same pattern), `description: str`,
-      `parameters: list[ParameterDefinition] = []` (zero params valid),
-      `mock_result: str`.
-    - `ToolCallingRequest` — `query: str` (non-empty), `functions: list[FunctionDefinition]
-      = []` — **zero functions is deliberately allowed**, as a "no tools available"
-      contrast demo, not a required minimum.
-    - `ToolCallRecord` — `call_id`, `function_name` (as returned by the model — may not
-      match anything defined), `arguments: dict | None` (parsed, or `None` on JSON parse
-      failure), `raw_arguments: str` (always kept for display fallback),
-      `matched_function: bool`, `result: str` (what was actually sent back to the
-      model).
-    - `ToolCallingResponse` — `tool_calls: list[ToolCallRecord]` (empty if the model
-      answered directly), `final_answer: str`.
-  - `service.py`:
-    - `_cast_enum_value(raw, param_type)` — casts a comma-split enum string to
-      `int`/`float`/`bool` per the param's declared type, falling back to the raw string
-      on cast failure.
-    - `_build_json_schema_parameters(params)` — builds
-      `{"type":"object","properties":{...},"required":[...]}` (omit `"required"` key
-      entirely when empty; zero-param function → `{"type":"object","properties":{}}`).
-    - `_build_tool_schemas(functions)` — maps each `FunctionDefinition` to the
-      `{"type":"function","function":{...}}` shape.
-    - `run_tool_calling(query, functions) -> ToolCallingResponse`:
-      1. Build `tool_schemas` (or `None` if `functions` is empty).
-      2. First call: `run_chat([{"role":"user","content":query}], tools=tool_schemas)`,
-         wrapped in try/except surfacing provider errors as a visible `final_answer`
-         string (matches `llm_quirks/service.py`'s
-         `# noqa: BLE001 - surface any provider error to the UI` pattern) rather than a
-         500.
-      3. If no `tool_calls` came back: return directly with `final_answer=first.content`,
-         `tool_calls=[]` — mirrors the aspiration script's `else` branch.
-      4. Otherwise: build the assistant `tool_calls` message, append it; for each tool
-         call, `json.loads` the arguments (non-crashing — `None` + keep `raw_arguments`
-         on failure), look up the function by name:
-         - **Matched** → `result = defined.mock_result` verbatim (ignores parsed
-           arguments entirely, per the mock-response decision).
-         - **Unmatched** (model hallucinated a name) → `result = f"Unknown function:
-           {tc.name}"`, `matched_function=False`. Non-crashing; this string is what's
-           sent back to the model as the tool result, and the frontend flags it
-           distinctly.
-         Append each as a `role:"tool"` message with `tool_call_id`/`name`/`content`.
-      5. **Second call deliberately omits `tools`** (unlike the aspiration script, which
-         passes `tools` again) — this enforces the single-round scope boundary, not just
-         documents it. No multi-round agentic loop. Wrap in try/except same as step 2.
-      6. Return `ToolCallingResponse(tool_calls=records, final_answer=second.content)`.
-  - `router.py` — `POST /api/tool-calling/run`
-    (`APIRouter(prefix="/api/tool-calling", tags=["tool-calling"])`), delegates straight
-    to `run_tool_calling`.
-- **`backend/app/main.py`**: register the new router (before the `StaticFiles` mount,
-  which must stay last).
+- **`backend/app/features/tool_calling/templates.py`** (new in v2): single source of
+  truth for shipped templates, same pattern as `llm_quirks/cases.py` /
+  `token_efficiency/catalog.py`. `FunctionTemplate` (id, name, description,
+  parameter_name, parameter_description, `conditions: list[TemplateCondition]`,
+  default_fallback) and `TemplateCondition` (key — fixed, default_value — just a UI
+  starting point). `FUNCTION_TEMPLATES` holds the one shipped template;
+  `get_template_by_id()` looks one up. **Adding a new template means appending one
+  `FunctionTemplate` here — nothing else needs to change** (the `GET /templates`
+  endpoint, the frontend picker, and `service.py`'s resolver logic are all driven off
+  this registry).
+
+- **`backend/app/features/tool_calling/schemas.py`** (rewritten for v2): a
+  discriminated union on a `kind` field replaces the single v1 `FunctionDefinition`:
+  - `CustomFunctionDefinition` — `kind: Literal["custom"]`, `name` (pattern
+    `^[A-Za-z0-9_-]{1,64}$`), `description`, `mock_result`. No parameters field.
+  - `TemplateFunctionInstance` — `kind: Literal["template"]`, `template_id`,
+    `values: dict[str, str]` (condition key → user-edited value),
+    `fallback_value: str`.
+  - `FunctionInput = Annotated[CustomFunctionDefinition | TemplateFunctionInstance,
+    Field(discriminator="kind")]`.
+  - `ToolCallingRequest` — `query` (non-empty), `functions: list[FunctionInput]` (zero
+    allowed, still a deliberate "no tools available" demo). A `model_validator(mode=
+    "after")` rejects duplicate function names across the whole list — resolving each
+    template instance to its template's fixed `name` first, so a custom function
+    colliding with a template's name (or two customs sharing a name) is caught with a
+    clear 422 rather than confusing the model with two same-named tools.
+  - `ToolCallRecord` / `ToolCallingResponse` — unchanged from v1 (call_id,
+    function_name, parsed `arguments`, `raw_arguments`, `matched_function`, `result`;
+    response is `tool_calls` + `final_answer`).
+  - `FunctionTemplateOut` / `TemplateConditionOut` (new) — what `GET /templates`
+    returns for the frontend to render the picker and pre-fill values.
+  - `ParameterDefinition` and the v1 generic-parameter concept are gone entirely.
+
+- **`backend/app/features/tool_calling/service.py`** (reworked for v2):
+  - `list_function_templates()` — maps `FUNCTION_TEMPLATES` to `FunctionTemplateOut`
+    for the router.
+  - `_build_tool_schema(fn)` — branches on `isinstance(fn, CustomFunctionDefinition)`:
+    custom → `{"type":"object","properties":{}}` (zero-arg); template → looks up the
+    `FunctionTemplate` and builds a one-parameter schema with `enum` set to the
+    template's condition keys.
+  - `_custom_resolver(fn)` / `_template_resolver(fn)` — each returns a small closure
+    `(parsed_args) -> str`. Custom's closure always returns `fn.mock_result`. Template's
+    closure normalizes the model's argument and the condition keys the same way
+    (`.strip().casefold()`), returns the matching edited value or `fn.fallback_value`.
+  - `_build_name_and_resolver(fn)` — pairs a function's real name (its own `name` for
+    custom, the template's fixed `name` for template) with its resolver, so
+    `run_tool_calling` can build one `name -> resolver` dict regardless of kind.
+  - `run_tool_calling(query, functions)` flow is otherwise the same shape as v1: first
+    call with `tools` (or `None` if `functions` is empty) → if no `tool_calls`, return
+    `first.content` directly (mirrors the aspiration script's `else` branch) → else
+    build the assistant `tool_calls` message, resolve each call via the
+    `name -> resolver` map (unmatched name still produces a non-crashing
+    `"Unknown function: X"` tool result + `matched_function=False`, same as v1) → second
+    call **without** `tools` (still the deliberate single-round scope boundary) with
+    `max_tokens=800` (bumped from the `run_chat` default of 500 after a v1 test came
+    close to truncating) → return `tool_calls` + `final_answer`.
+  - The v1 `_cast_enum_value` / `_build_json_schema_parameters` generic-parameter
+    helpers are deleted.
+
+- **`backend/app/features/tool_calling/router.py`**: `GET /api/tool-calling/templates
+  -> list[FunctionTemplateOut]` (new in v2, mirrors `token_efficiency`'s `GET
+  /catalog` — frontend needs this server-owned data for the picker and the on-load
+  seed). `POST /api/tool-calling/run` unchanged aside from the request schema.
+
+- **`backend/app/main.py`**: router registration unchanged from v1.
 
 ## Frontend
 
-- **`frontend/index.html`**: add a fourth "Tool Calling" card (same structure as the
-  existing three), inserted after Token Efficiency.
-- **`frontend/features/tool-calling/index.html` + `.js`**: follows `moderation/`
-  conventions — `.panel` blocks, `hidden`-attribute toggling, `apiPost` from
-  `assets/js/api.js`. Reuses existing CSS classes rather than inventing new global
-  styles: `.panel`, `.hint`, `.error`, `.button-secondary`, `.badge`
-  (`clear`/`flagged`), `.variant-grid`/`.variant-card`/`.variant-label`/
-  `.variant-prompt`/`.variant-output`, `.explanation-panel`.
-  - **Functions panel**: `#functions-list` (dynamically rendered function cards) + "Add
-    function" button (`.button-secondary`). Each card: name input, description
-    textarea, a `.params-list` of parameter rows (name, type `<select>`, description,
-    required checkbox, enum comma-list input, remove button), an "Add parameter"
-    button, and a mock-result textarea. Use **event delegation** on `#functions-list`
-    for add/remove (both function cards and param rows are added/removed dynamically).
-  - **Query panel**: textarea + "Run" button + error div.
-  - **Results**: for each tool call, a `.variant-card` showing the function name, a
-    `.badge` (`clear`/"matched" vs `flagged`/"unknown function"), the arguments
-    (`JSON.stringify(record.arguments)`, or `raw_arguments + " (invalid JSON)"` on parse
-    failure), and the mock result returned. If `tool_calls` is empty, show a hint ("The
-    model answered directly without calling any function") instead of the grid. Always
-    show `final_answer` in an `.explanation-panel`-style block.
-  - **State**: DOM is the source of truth (matches `moderation.js`/`token-efficiency.js`
-    — neither keeps a separate JS model object). Collect functions from the DOM at
-    submit time via a `collectFunctions()` helper.
-  - **Client-side validation** before submit: query non-empty; each function's `name`
-    non-empty and matches the name pattern; `mock_result` non-empty. Do **not** require
-    at least one function — zero is a valid, intentional demo.
-  - **Seed example** (client-side only, no new backend endpoint — unlike
-    `token-efficiency`'s server-owned `sample-queries`, there's no server-owned catalog
-    here, the whole point is the user's own functions): on page load, pre-fill one
-    editable/removable function card adapted from the aspiration script's
-    `get_current_weather` (required `location` string param, optional `unit` string
-    param with enum `celsius,fahrenheit`, mock result e.g. `"72°F and sunny"`) and set
-    the query textarea to `"What's the weather like in Boston?"`.
-- **`frontend/assets/css/style.css`**: the stylesheet currently has no rules for
-  `<input type="text">` (only `textarea`/`select`/`button`), so add dark-theme input
-  styling, `.param-row` grid layout (name / type / description / required / enum /
-  remove), `.function-card` spacing + header flex row, `input[type="checkbox"] {
-  accent-color: var(--accent); }`, and an override for the global
-  `button { margin-top: 0.85rem }` on inline remove buttons inside function/param rows
-  so they don't visually misalign.
-- **`README.md`**: add a fourth bullet under "Currently included" describing the
-  feature, matching the existing three bullets' style.
-- **`CLAUDE.md`**: two edits (corrections to now-stale facts, not a new section) — add
-  the fourth feature to the "What this is" list, and update the `llm_client.py`
-  sentence describing `run_chat` to mention it now optionally accepts `tools` and
-  returns `tool_calls`. No new "how to extend" paragraph — unlike LLM Quirks' `cases.py`
-  or Token Efficiency's `catalog.py`, this feature has no server-owned data registry;
-  functions are entirely user-authored per-request via the UI.
+- **`frontend/index.html`**: "Tool Calling" card, copy reworded (see Context).
+- **`frontend/features/tool-calling/index.html` + `.js`** (`.js` substantially
+  reworked for v2): still follows `moderation/` conventions — `.panel` blocks,
+  `hidden`-attribute toggling, `apiGet`/`apiPost` from `assets/js/api.js`. DOM stays
+  the source of truth (no separate JS model object), same as v1 and as
+  `moderation.js`/`token-efficiency.js`.
+  - **Functions panel**: `#functions-list` + two add controls — "Add custom function"
+    button and an "Add template" `<select>` populated from `GET /templates`, filtered
+    to templates not already present (`refreshTemplateSelect()` recomputes this on
+    every add/remove by reading `.function-card[data-kind="template"]` elements'
+    `data-template-id`).
+  - **Custom function card**: `data-kind="custom"` — name input, description
+    textarea, one "Answer" textarea. No parameter builder (that's the whole point of
+    v2's split).
+  - **Template function card**: `data-kind="template"` `data-template-id="..."` — fixed
+    `name` shown as plain text (not an input, to signal it's not editable), a
+    `TEMPLATE` badge, description + parameter name shown as read-only hint text, one
+    `.template-condition-row` per condition (fixed key label + editable value input,
+    `data-key` set to the key), and a `.template-fallback-row` (editable, prefilled
+    from `default_fallback`).
+  - Event delegation on `#functions-list` handles all card removal (works for both
+    kinds); the template dropdown's own `change` listener handles adding.
+  - `collectFunctions()` branches per `card.dataset.kind`, building either
+    `{kind:"custom", name, description, mock_result}` or `{kind:"template",
+    template_id, values, fallback_value}`.
+  - `validateFunctions()`: custom cards still get the v1 name-pattern +
+    non-empty-answer checks; **new in v2** — a duplicate-name check across all cards
+    (resolving template cards to their template's real `name` via the in-memory
+    `templateCatalog`), so the same "two functions can't share a name" rule that the
+    server enforces (schemas.py's validator) also short-circuits client-side with a
+    friendly message instead of reaching the server and rendering a raw Pydantic error
+    array.
+  - **Seed**: on load, `init()` fetches the template catalog, calls
+    `refreshTemplateSelect()`, then adds the `get_current_weather` template via the
+    same `addTemplateFunctionCard()` path a user clicking the dropdown would use (not a
+    hand-built fake card like v1's seed was) and sets the query to `"What's the weather
+    like in Boston?"`.
+  - `renderToolCall`/`renderResults` unchanged from v1: results still build DOM nodes
+    with `.textContent` rather than `innerHTML` for anything that could carry
+    model-controlled or user-typed text (function name, arguments, result) — template
+    card markup is the one place `innerHTML` is used with interpolation, but only for
+    developer-authored `templates.py` constants (name, description, keys, defaults),
+    never anything a user or the model supplies.
+- **`frontend/assets/css/style.css`**: v1's `.param-row`/`.param-required` (the generic
+  parameter-builder styling) were removed since nothing renders them anymore. Added:
+  dark-theme `input[type="text"]`/`input[type="number"]` + `input[type="checkbox"]`
+  styling (still needed — carried over from v1), `.function-card-kind-label` (the
+  `TEMPLATE` badge), `.fn-fixed-name` (monospace, non-editable name display),
+  `.add-function-controls` (flex row for the two add controls),
+  `.template-condition-row`/`.template-condition-key`/`.template-fallback-row`.
+- **`README.md`** / **`CLAUDE.md`**: both updated to describe the two-kind split
+  instead of the v1 single-mock-result design. `CLAUDE.md` also gained a one-line "how
+  to extend" note pointing at `templates.py` — v1's plan had explicitly said no such
+  note was warranted (true at the time, since nothing was a server-owned registry
+  yet); `templates.py` now is exactly that pattern, so the note was added rather than
+  left stale.
 
-## Key decisions (so no re-derivation is needed mid-implementation)
+## What's possible next (documented, not built)
 
-| Question | Decision |
-|---|---|
-| New llm_client function vs. extend `run_chat`? | Extend `run_chat` with optional `tools` param + `tool_calls` field on `ChatResult` |
-| `ChatResult.content` on tool-call turns | Normalize `None` → `""` inside `run_chat`, don't widen the type |
-| Second (final-answer) call passes `tools` again? | No — deliberately dropped, enforces the single-round scope boundary |
-| Unmatched function name from model | Non-crashing; `role:tool` message says "Unknown function: X"; `matched_function=False` |
-| Invalid JSON in model's tool-call arguments | Non-crashing; `arguments=None`, `raw_arguments` kept, mock result still returned |
-| Zero functions submitted | Allowed — deliberate "no tools available" demo; `tools` kwarg omitted entirely (not `[]`) |
-| Zero parameters on a function | Allowed — `{"type":"object","properties":{}}`, no `required` key |
-| Enum values for number/integer/boolean params | Cast per declared type with string fallback on cast failure |
-| Client-side seed example | Yes — `get_current_weather`-style, hardcoded const in JS, fully editable/removable |
+Raised when the user asked whether the condition table could be made fully dynamic
+(user-defined keys, not just values), in increasing order of complexity:
+1. **Generalize the parameter builder** (most likely next step): let a parameter be
+   marked "conditional" and let the user add their own key→value rows (+ fallback)
+   instead of only picking from a fixed template — reuses the same row-based UI
+   pattern v1 had, just scoped to a "conditional" parameter type instead of arbitrary
+   parameters.
+2. **Templates + a separate fully-custom-conditional flow**: keep templates as-is and
+   add option 1 as a third function-creation path alongside custom/template.
+3. **Wildcard/fuzzy key matching** (e.g. `"par*"`) layered on top of either — backend
+   only, no new UI.
+4. **LLM-simulated fallback for unmapped keys** — would reopen the
+   static-mock-vs-LLM-simulated trade-off already deliberately decided against
+   (decision 1, both v1 and v2) — avoid unless that trade-off is revisited on purpose.
 
 ## Verification
 
-1. Start the server: `uvicorn app.main:app --reload --app-dir backend` (from repo root).
-2. Open `http://localhost:8000` — confirm the new "Tool Calling" card appears and links
-   to the feature page.
-3. On the feature page: confirm the seeded `get_current_weather` example is pre-filled
-   and editable.
-4. Click "Add function", fill in a second function (e.g. `get_world_cup_winner`), add a
-   couple of parameter rows including one with enum values, then "Remove" it — confirm
-   add/remove both work cleanly.
-5. Run the seeded example as-is ("What's the weather like in Boston?") — confirm the
-   response shows the `get_current_weather` tool call with parsed arguments, the mock
-   result, and a coherent final answer referencing it.
-6. Ask a question that shouldn't need any function (e.g. "What's 2+2?") with the weather
-   function still defined — confirm `tool_calls` comes back empty and the "answered
-   directly" hint shows.
-7. Remove all functions and ask any question — confirm the zero-functions path works
-   (plain chat, no `tools` kwarg sent).
-8. If reproducible, try to force the model to call an undefined function name and
-   confirm the "Unknown function" branch renders correctly; otherwise code-review that
-   branch directly since it's hard to force deterministically.
-9. Confirm the new `input[type="text"]` CSS rule doesn't regress the other three pages
-   (none currently use text `<input>` elements, so this should be additive-only — spot
-   check them anyway).
+1. `uvicorn app.main:app --reload --app-dir backend` (from repo root).
+2. `GET /api/tool-calling/templates` returns the one `get_current_weather` template
+   with its three conditions and fallback.
+3. Homepage: tile copy renders. Tool Calling page: blurb renders, and the
+   `get_current_weather` template is pre-seeded via the real add-template path (not a
+   hand-built card).
+4. "Add template" dropdown shows "All templates added" (disabled) once the one
+   template is on the page; remove its card, confirm it reappears and is selectable
+   again.
+5. "Add custom function" produces a card with no parameter builder — just
+   name/description/answer.
+6. Edit a condition value directly in the browser (not just via curl), run a query that
+   should hit that key, and confirm the *edited* value comes back — proven live: typed
+   a distinctive value into the Paris row, asked "What's the weather in Paris right
+   now?", got that exact value back in the tool call.
+7. Ask about a location not in the list — confirmed via direct resolver test
+   (`_template_resolver`) that normalization + fallback works
+   (case/whitespace-insensitive match, `None` args, unlisted key all fall back
+   correctly); the live model, given the enum-constrained schema, tends to decline to
+   call the tool at all for an out-of-enum city rather than call it with a bad value —
+   also acceptable behavior, just means the fallback path is easier to prove via direct
+   unit-style testing than by prompting.
+8. Add a custom function named `get_current_weather` (colliding with the template) and
+   confirm both the client-side check (friendly message, no request sent) and the
+   server-side 422 (`Duplicate function name: get_current_weather`) reject it.
+9. Re-check the other three pages (moderation, llm-quirks, token-efficiency + catalog)
+   load without CSS regressions after removing `.param-row`/`.param-required`.
