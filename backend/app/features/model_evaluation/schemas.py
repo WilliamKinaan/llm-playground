@@ -41,9 +41,26 @@ class ClassifyResponse(BaseModel):
     reasoning: str
 
 
+class TestCaseResult(BaseModel):
+    """One test case's outcome from a "Run" - what the router actually said
+    vs. what was expected, shown in-page so results don't require Phoenix
+    access to see (Phoenix Cloud is a personal account, not something a
+    public demo's visitors can log into).
+    """
+
+    test_id: str
+    customer_message: str
+    expected_department: Department
+    actual_department: Department
+    correct: bool
+    reasoning: str
+
+
 class RunStatus(BaseModel):
-    """Progress/result of the background test-suite run against Phoenix.
-    Polled by the frontend after `POST /run-tests` kicks a run off.
+    """Progress/result of the background test-suite run. Polled by the
+    frontend after `POST /run-tests` kicks a run off. `results` fills in
+    (one entry per finished test case) as the run progresses and is complete
+    once `status` is "done".
     """
 
     status: Literal["idle", "running", "done", "error"]
@@ -51,12 +68,14 @@ class RunStatus(BaseModel):
     total: int
     accuracy: float | None = None
     error: str | None = None
+    results: list[TestCaseResult] = Field(default_factory=list)
 
 
 class PhoenixLinkResponse(BaseModel):
-    """A standing link to this feature's live activity in Phoenix - shown
-    from page load, independent of whether a test run has ever been kicked
-    off, so the user can see current accuracy without running anything.
+    """A standing link to this feature's live activity in Phoenix, for the
+    owner's own use - `url` is None when `show_phoenix_link` is off (the
+    default for a public deployment, since Phoenix Cloud is a personal
+    account visitors can't log into).
     """
 
-    url: str
+    url: str | None

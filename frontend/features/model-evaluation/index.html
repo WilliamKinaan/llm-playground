@@ -13,7 +13,7 @@
     <h1>Model Evaluation</h1>
     <p>Step 1 of a support-ticket pipeline: the <strong>router</strong> reads a customer
       message and picks a department. Try it on your own message, or run the full
-      known-answer test suite and track accuracy over time in Phoenix.</p>
+      known-answer test suite and see every result and the overall accuracy below.</p>
   </header>
 
   <main>
@@ -22,7 +22,7 @@
       <div id="departments-list" class="template-conditions"></div>
     </div>
 
-    <div class="panel">
+    <div id="phoenix-panel" class="panel" hidden>
       <strong>Live accuracy in Phoenix</strong>
       <p class="hint">Every classification below - and every test suite run - lands a trace
         in Phoenix, so you can see current accuracy without running anything yourself.</p>
@@ -52,8 +52,7 @@
     <div class="panel">
       <strong>Test suite</strong>
       <p class="hint">Runs every known-answer test case against the router in the
-        background and logs the results to Phoenix as an Experiment, so accuracy can be
-        compared run over run.</p>
+        background and shows each result below as it finishes.</p>
       <button id="run-btn">Run</button>
       <div id="run-error" class="error" hidden></div>
 
@@ -65,6 +64,8 @@
       <div id="run-summary" hidden>
         <strong id="run-accuracy"></strong>
       </div>
+
+      <div id="results-list" class="variant-grid"></div>
     </div>
   </main>
 

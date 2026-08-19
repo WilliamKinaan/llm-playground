@@ -1,14 +1,17 @@
 // Model Evaluation: three independent pieces.
-//   - Departments list + a standing Phoenix link, both populated once on
-//     load so the user knows the possible outputs and can see live
-//     accuracy without doing anything.
+//   - Departments list, populated once on load so the user knows the
+//     possible outputs before trying anything.
 //   - "Classify": one-off router call for a single message, with an example
 //     picker (dropdown + "Choose" button) to save typing.
 //   - "Test suite": kicks off a background run of every known-answer test
-//     case, then polls /run-status until it finishes. The per-test-case
-//     results and run-over-run accuracy history live in Phoenix, not here.
+//     case, then polls /run-status until it finishes, rendering each
+//     result in-page as it comes in - results don't require Phoenix access
+//     to see, since Phoenix Cloud is a personal account a public demo's
+//     visitors can't log into. The optional Phoenix panel (hidden unless
+//     the backend has SHOW_PHOENIX_LINK set) is for the owner's own use.
 
 const departmentsListEl = document.getElementById("departments-list");
+const phoenixPanelEl = document.getElementById("phoenix-panel");
 const phoenixSpansLinkEl = document.getElementById("phoenix-spans-link");
 
 const exampleSelectEl = document.getElementById("example-select");
@@ -28,6 +31,7 @@ const runBarFillEl = document.getElementById("run-bar-fill");
 const runProgressTextEl = document.getElementById("run-progress-text");
 const runSummaryEl = document.getElementById("run-summary");
 const runAccuracyEl = document.getElementById("run-accuracy");
+const resultsListEl = document.getElementById("results-list");
 
 const POLL_INTERVAL_MS = 1500;
 let pollTimer = null;
@@ -98,11 +102,48 @@ async function handleClassify() {
   }
 }
 
+function renderResultRow(result) {
+  // customer_message/reasoning/department all come straight from CSV data
+  // or the model - untrusted as far as HTML goes, so build nodes with
+  // textContent rather than interpolating into innerHTML.
+  const card = document.createElement("div");
+  card.className = "variant-card";
+
+  const label = document.createElement("div");
+  label.className = "variant-label";
+  label.textContent = result.test_id;
+
+  const badge = document.createElement("span");
+  badge.className = `badge ${result.correct ? "clear" : "flagged"}`;
+  badge.textContent = result.correct ? "correct" : "incorrect";
+
+  const messageEl = document.createElement("div");
+  messageEl.className = "variant-prompt";
+  messageEl.textContent = result.customer_message;
+
+  const outputEl = document.createElement("div");
+  outputEl.className = "variant-output";
+  outputEl.textContent = result.correct
+    ? `${result.actual_department}`
+    : `expected ${result.expected_department}, got ${result.actual_department}`;
+
+  card.append(label, badge, messageEl, outputEl);
+  return card;
+}
+
+function renderResults(results) {
+  resultsListEl.innerHTML = "";
+  for (const result of results) {
+    resultsListEl.appendChild(renderResultRow(result));
+  }
+}
+
 function renderRunStatus(status) {
   const pct = status.total ? Math.round((status.completed / status.total) * 100) : 0;
   runBarFillEl.style.width = `${pct}%`;
   runProgressTextEl.textContent = `${status.completed} / ${status.total} complete`;
   runProgressEl.hidden = false;
+  renderResults(status.results);
 
   if (status.status === "done") {
     runSummaryEl.hidden = false;
@@ -140,6 +181,7 @@ async function pollRunStatus() {
 async function handleRun() {
   runErrorEl.hidden = true;
   runSummaryEl.hidden = true;
+  resultsListEl.innerHTML = "";
   runBtn.disabled = true;
   runBtn.textContent = "Running...";
 
@@ -170,7 +212,10 @@ async function init() {
   renderDepartments(departments);
   exampleMessages = examples;
   renderExampleOptions(examples);
-  phoenixSpansLinkEl.href = phoenixLink.url;
+  if (phoenixLink.url) {
+    phoenixSpansLinkEl.href = phoenixLink.url;
+    phoenixPanelEl.hidden = false;
+  }
 }
 
 init();
