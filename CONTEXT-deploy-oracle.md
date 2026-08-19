@@ -4,7 +4,9 @@ Deployed on the same Oracle Cloud instance as `rag-prototype`
 (`~/Documents/ai/rag-prototype`, live at `http://134.98.154.12:8000/`), on a separate
 port — same VM, independent app, independent systemd service.
 
-- **Live at:** `http://134.98.154.12:8001/`
+- **Live at:** `http://134.98.154.12:8001/` (raw IP) and
+  `https://llm.williamkinaan.com/` (custom domain — see "Custom domain" below).
+  Same origin, same systemd service — not two deployments.
 - **Instance:** Oracle Linux 9.8, SELinux Enforcing, user `opc`, same VM as
   rag-prototype. See `rag-prototype/CONTEXT-deploy-oracle.md` for instance-shape
   history and the two Oracle-Linux-specific gotchas (SQLite version, SELinux) —
@@ -66,7 +68,46 @@ Two independent layers, both needed:
   ingress rule — source `0.0.0.0/0`, TCP, destination port `8001`. Same list that
   already has the rule for rag-prototype's port 8000.
 
-No TLS/domain — plain HTTP on the raw public IP, same as rag-prototype.
+No TLS on the raw IP:port — plain HTTP on `134.98.154.12:8001`, same as
+rag-prototype. TLS/domain access goes through nginx instead (see below).
+
+## Custom domain (`llm.williamkinaan.com`)
+
+DNS is Cloudflare-proxied (orange-cloud) — `dig llm.williamkinaan.com` resolves to
+Cloudflare's edge IPs, not the Oracle box directly. Cloudflare terminates the
+public HTTPS connection, then proxies to the box over HTTPS ("Full (strict)" SSL
+mode), where **nginx** (already installed on the box for other subdomains, not
+part of this repo) terminates that connection using a Cloudflare Origin CA cert
+and reverse-proxies to the same `llm-playground` service the raw IP hits:
+
+```
+# /etc/nginx/conf.d/subdomains.conf (server-only file, not in this repo — shared
+# with sibling domains rag.williamkinaan.com -> :8000 and
+# harness.williamkinaan.com -> :8003, each its own server{} block)
+server {
+    listen 443 ssl;
+    server_name llm.williamkinaan.com;
+    ssl_certificate     /etc/nginx/ssl/cf-origin.pem;
+    ssl_certificate_key /etc/nginx/ssl/cf-origin.key;
+    location / {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+(plus a `listen 80` block for the same `server_name` that 301-redirects to
+`https://`).
+
+**Practically: there is nothing extra to deploy for the domain.** It's the same
+`llm-playground` systemd service on port 8001 that `deploy-oracle.sh` already
+restarts — one redeploy updates both URLs at once. Confirmed by diffing the two
+responses byte-for-byte after a deploy. If the domain ever serves something
+*different* from the raw IP, the systemd service is fine and the problem is in
+nginx or Cloudflare (e.g. Cloudflare edge cache — check `cf-cache-status` in the
+response headers — or nginx not reloaded), not in this app.
 
 ## Redeploying after a code change
 
@@ -112,6 +153,8 @@ sudo firewall-cmd --permanent --add-port=8001/tcp && sudo firewall-cmd --reload
 - **No auth / no rate limiting** on `/api/moderation/check` or
   `/api/llm-quirks/.../run` — anyone who finds the URL can spend the Mistral quota
   on the key in `.env`. Acceptable for a portfolio demo; revisit if that changes.
-- **No TLS/domain** — plain HTTP on the public IP only, same as rag-prototype.
+- **No TLS on the raw IP:port** — `134.98.154.12:8001` is plain HTTP, same as
+  rag-prototype. TLS is only available via the `llm.williamkinaan.com` domain
+  (Cloudflare + nginx, see "Custom domain" above).
 - Uses a Mistral key rotated specifically for this deployment, not the one that was
   originally exposed in plaintext in `openai/moderation.py`.
