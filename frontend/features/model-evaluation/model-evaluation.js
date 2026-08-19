@@ -5,14 +5,9 @@
 //     picker (dropdown + "Choose" button) to save typing.
 //   - "Test suite": kicks off a background run of every known-answer test
 //     case, then polls /run-status until it finishes, rendering each
-//     result in-page as it comes in - results don't require Phoenix access
-//     to see, since Phoenix Cloud is a personal account a public demo's
-//     visitors can't log into. The optional Phoenix panel (hidden unless
-//     the backend has SHOW_PHOENIX_LINK set) is for the owner's own use.
+//     result in-page as it comes in.
 
 const departmentsListEl = document.getElementById("departments-list");
-const phoenixPanelEl = document.getElementById("phoenix-panel");
-const phoenixSpansLinkEl = document.getElementById("phoenix-spans-link");
 
 const exampleSelectEl = document.getElementById("example-select");
 const chooseExampleBtn = document.getElementById("choose-example-btn");
@@ -200,22 +195,16 @@ classifyBtn.addEventListener("click", handleClassify);
 chooseExampleBtn.addEventListener("click", handleChooseExample);
 runBtn.addEventListener("click", handleRun);
 
-// Populate the departments list, example picker, and the standing Phoenix
-// link as soon as the page loads - all three should be visible without the
-// user doing anything.
+// Populate the departments list and example picker as soon as the page
+// loads, so both are visible without the user doing anything.
 async function init() {
-  const [departments, examples, phoenixLink] = await Promise.all([
+  const [departments, examples] = await Promise.all([
     apiGet("/api/model-evaluation/departments"),
     apiGet("/api/model-evaluation/examples"),
-    apiGet("/api/model-evaluation/phoenix-link"),
   ]);
   renderDepartments(departments);
   exampleMessages = examples;
   renderExampleOptions(examples);
-  if (phoenixLink.url) {
-    phoenixSpansLinkEl.href = phoenixLink.url;
-    phoenixPanelEl.hidden = false;
-  }
 }
 
 init();

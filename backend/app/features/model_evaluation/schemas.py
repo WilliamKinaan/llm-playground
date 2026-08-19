@@ -43,9 +43,7 @@ class ClassifyResponse(BaseModel):
 
 class TestCaseResult(BaseModel):
     """One test case's outcome from a "Run" - what the router actually said
-    vs. what was expected, shown in-page so results don't require Phoenix
-    access to see (Phoenix Cloud is a personal account, not something a
-    public demo's visitors can log into).
+    vs. what was expected.
     """
 
     test_id: str
@@ -69,13 +67,3 @@ class RunStatus(BaseModel):
     accuracy: float | None = None
     error: str | None = None
     results: list[TestCaseResult] = Field(default_factory=list)
-
-
-class PhoenixLinkResponse(BaseModel):
-    """A standing link to this feature's live activity in Phoenix, for the
-    owner's own use - `url` is None when `show_phoenix_link` is off (the
-    default for a public deployment, since Phoenix Cloud is a personal
-    account visitors can't log into).
-    """
-
-    url: str | None
