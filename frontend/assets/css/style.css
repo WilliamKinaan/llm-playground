@@ -452,3 +452,10 @@ button:disabled {
   padding-top: 0.75rem;
   margin-top: 0.75rem;
 }
+
+/* Model Evaluation's departments list reuses .template-condition-row, but
+   department codes (e.g. TECHNICAL_SUPPORT) are longer than the template
+   condition keys (e.g. "Paris") that column width was sized for. */
+#departments-list .template-condition-row {
+  grid-template-columns: 190px 1fr;
+}

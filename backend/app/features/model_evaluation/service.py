@@ -20,9 +20,9 @@ from phoenix.client import Client as PhoenixClient
 
 from app.config import get_settings
 
-from .data import TEST_CASES
-from .router_chain import classify as run_router_chain
-from .schemas import ClassifyResponse, RunStatus
+from .data import EXAMPLE_MESSAGES, TEST_CASES
+from .router_chain import DEPARTMENTS, classify as run_router_chain
+from .schemas import ClassifyResponse, DepartmentInfo, ExampleMessage, RunStatus
 
 DATASET_NAME = "router-test-cases"
 
@@ -32,10 +32,25 @@ _state: dict = {
     "completed": 0,
     "total": len(TEST_CASES),
     "accuracy": None,
-    "experiment_url": None,
-    "dataset_url": None,
     "error": None,
 }
+
+
+def list_departments() -> list[DepartmentInfo]:
+    return DEPARTMENTS
+
+
+def list_example_messages() -> list[ExampleMessage]:
+    return EXAMPLE_MESSAGES
+
+
+def get_phoenix_spans_url() -> str:
+    """A standing link to this feature's live activity in Phoenix (the
+    project every classification lands a trace in), so the user can see
+    current accuracy without having to run the test suite themselves.
+    """
+    settings = get_settings()
+    return f"{settings.phoenix_base_url}/projects/{settings.phoenix_project_id}/spans?timeRangeKey=1d"
 
 
 def classify_message(message: str) -> ClassifyResponse:
@@ -111,18 +126,9 @@ def _run_experiment() -> None:
             evaluations.extend(run.result if isinstance(run.result, list) else [run.result])
         scores = [ev["score"] for ev in evaluations if ev.get("score") is not None]
         accuracy = sum(scores) / len(scores) if scores else None
-        experiment_url = client.experiments.get_experiment_url(
-            dataset_id=dataset.id, experiment_id=ran["experiment_id"]
-        )
-        dataset_url = client.experiments.get_dataset_experiments_url(dataset_id=dataset.id)
 
         with _lock:
-            _state.update(
-                status="done",
-                accuracy=accuracy,
-                experiment_url=experiment_url,
-                dataset_url=dataset_url,
-            )
+            _state.update(status="done", accuracy=accuracy)
     except Exception as exc:  # noqa: BLE001 - surface any failure via /run-status instead of dying silently in the thread
         with _lock:
             _state.update(status="error", error=str(exc))
@@ -136,8 +142,6 @@ def start_run() -> RunStatus:
                 completed=0,
                 total=len(TEST_CASES),
                 accuracy=None,
-                experiment_url=None,
-                dataset_url=None,
                 error=None,
             )
             threading.Thread(target=_run_experiment, daemon=True).start()

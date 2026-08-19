@@ -18,8 +18,28 @@
 
   <main>
     <div class="panel">
+      <strong>Departments the router can choose</strong>
+      <div id="departments-list" class="template-conditions"></div>
+    </div>
+
+    <div class="panel">
+      <strong>Live accuracy in Phoenix</strong>
+      <p class="hint">Every classification below - and every test suite run - lands a trace
+        in Phoenix, so you can see current accuracy without running anything yourself.</p>
+      <a id="phoenix-spans-link" href="#" target="_blank" rel="noopener">View in Phoenix &rarr;</a>
+    </div>
+
+    <div class="panel">
       <label for="message-input"><strong>Customer message</strong></label>
       <textarea id="message-input" placeholder="e.g. I was charged twice for my order"></textarea>
+
+      <div class="add-function-controls">
+        <select id="example-select">
+          <option value="" disabled selected>Choose an example message...</option>
+        </select>
+        <button id="choose-example-btn" class="button-secondary" type="button">Choose</button>
+      </div>
+
       <button id="classify-btn">Classify</button>
       <div id="classify-error" class="error" hidden></div>
 
@@ -42,9 +62,8 @@
         <span id="run-progress-text" class="hint"></span>
       </div>
 
-      <div id="run-summary" class="explanation-panel" hidden>
-        <div id="run-accuracy"></div>
-        <a id="phoenix-link" href="#" target="_blank" rel="noopener">View in Phoenix &rarr;</a>
+      <div id="run-summary" hidden>
+        <strong id="run-accuracy"></strong>
       </div>
     </div>
   </main>

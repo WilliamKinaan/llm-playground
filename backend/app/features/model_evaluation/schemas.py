@@ -16,6 +16,22 @@ Department = Literal[
 ]
 
 
+class DepartmentInfo(BaseModel):
+    """One department the router can pick, shown to the user up front so
+    they know the full set of possible outputs before they try anything.
+    """
+
+    code: Department
+    description: str
+
+
+class ExampleMessage(BaseModel):
+    """One example customer message for the "choose an example" dropdown."""
+
+    message: str
+    complexity: str
+
+
 class ClassifyRequest(BaseModel):
     message: str = Field(min_length=1)
 
@@ -34,6 +50,13 @@ class RunStatus(BaseModel):
     completed: int
     total: int
     accuracy: float | None = None
-    experiment_url: str | None = None
-    dataset_url: str | None = None
     error: str | None = None
+
+
+class PhoenixLinkResponse(BaseModel):
+    """A standing link to this feature's live activity in Phoenix - shown
+    from page load, independent of whether a test run has ever been kicked
+    off, so the user can see current accuracy without running anything.
+    """
+
+    url: str

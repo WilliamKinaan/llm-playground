@@ -1,9 +1,18 @@
-// Model Evaluation: two independent panels.
-//   - "Classify": one-off router call for a single message.
+// Model Evaluation: three independent pieces.
+//   - Departments list + a standing Phoenix link, both populated once on
+//     load so the user knows the possible outputs and can see live
+//     accuracy without doing anything.
+//   - "Classify": one-off router call for a single message, with an example
+//     picker (dropdown + "Choose" button) to save typing.
 //   - "Test suite": kicks off a background run of every known-answer test
 //     case, then polls /run-status until it finishes. The per-test-case
-//     results and run-over-run accuracy history live in Phoenix, not here -
-//     this page only shows the current run's progress and a link out.
+//     results and run-over-run accuracy history live in Phoenix, not here.
+
+const departmentsListEl = document.getElementById("departments-list");
+const phoenixSpansLinkEl = document.getElementById("phoenix-spans-link");
+
+const exampleSelectEl = document.getElementById("example-select");
+const chooseExampleBtn = document.getElementById("choose-example-btn");
 
 const messageInput = document.getElementById("message-input");
 const classifyBtn = document.getElementById("classify-btn");
@@ -19,10 +28,44 @@ const runBarFillEl = document.getElementById("run-bar-fill");
 const runProgressTextEl = document.getElementById("run-progress-text");
 const runSummaryEl = document.getElementById("run-summary");
 const runAccuracyEl = document.getElementById("run-accuracy");
-const phoenixLinkEl = document.getElementById("phoenix-link");
 
 const POLL_INTERVAL_MS = 1500;
 let pollTimer = null;
+let exampleMessages = []; // fetched once from GET /api/model-evaluation/examples
+
+function renderDepartments(departments) {
+  departmentsListEl.innerHTML = "";
+  for (const dept of departments) {
+    const row = document.createElement("div");
+    row.className = "template-condition-row";
+
+    const code = document.createElement("span");
+    code.className = "template-condition-key";
+    code.textContent = dept.code;
+
+    const description = document.createElement("span");
+    description.textContent = dept.description;
+
+    row.append(code, description);
+    departmentsListEl.appendChild(row);
+  }
+}
+
+function renderExampleOptions(examples) {
+  for (const [index, example] of examples.entries()) {
+    const option = document.createElement("option");
+    option.value = String(index);
+    const preview = example.message.length > 80 ? `${example.message.slice(0, 80)}...` : example.message;
+    option.textContent = `[${example.complexity}] ${preview}`;
+    exampleSelectEl.appendChild(option);
+  }
+}
+
+function handleChooseExample() {
+  const index = exampleSelectEl.value;
+  if (index === "") return;
+  messageInput.value = exampleMessages[Number(index)].message;
+}
 
 async function handleClassify() {
   const message = messageInput.value.trim();
@@ -65,7 +108,6 @@ function renderRunStatus(status) {
     runSummaryEl.hidden = false;
     const accuracyPct = status.accuracy !== null ? Math.round(status.accuracy * 100) : "?";
     runAccuracyEl.textContent = `Accuracy: ${accuracyPct}%`;
-    phoenixLinkEl.href = status.experiment_url || status.dataset_url || "#";
   } else if (status.status === "error") {
     runErrorEl.textContent = status.error || "The test run failed.";
     runErrorEl.hidden = false;
@@ -113,4 +155,22 @@ async function handleRun() {
 }
 
 classifyBtn.addEventListener("click", handleClassify);
+chooseExampleBtn.addEventListener("click", handleChooseExample);
 runBtn.addEventListener("click", handleRun);
+
+// Populate the departments list, example picker, and the standing Phoenix
+// link as soon as the page loads - all three should be visible without the
+// user doing anything.
+async function init() {
+  const [departments, examples, phoenixLink] = await Promise.all([
+    apiGet("/api/model-evaluation/departments"),
+    apiGet("/api/model-evaluation/examples"),
+    apiGet("/api/model-evaluation/phoenix-link"),
+  ]);
+  renderDepartments(departments);
+  exampleMessages = examples;
+  renderExampleOptions(examples);
+  phoenixSpansLinkEl.href = phoenixLink.url;
+}
+
+init();

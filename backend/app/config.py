@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     # silently pointing at nothing.
     phoenix_api_key: str
     phoenix_base_url: str
+    # The Phoenix project that experiment runs land traces in (visible in the
+    # Phoenix UI under Tracing). Used to build a standing "see live accuracy"
+    # spans link that's shown regardless of whether a run has ever kicked
+    # off. Not secret on its own (meaningless without the space in
+    # phoenix_base_url, which stays out of committed files), so it's fine as
+    # a plain default here.
+    phoenix_project_id: str = "UHJvamVjdDo0"
 
 
 @lru_cache

@@ -1,0 +1,23 @@
+message,complexity
+"I bought a jacket last month, but it's too big. Can I return it?",simple
+"I used the return prepaid label you provided, but it's been over a week and I haven't heard back.",simple
+"I want to return a gift I received, but I don't have a receipt. What can I do?",simple
+"I made a purchase before March 2024, and I'm having trouble returning it. Can you help?",simple
+"Hi, I just received my order, but the product is completely broken and unusable. What can I do about this?",simple
+I got an electronic device that's not working properly. Can you help me figure this out?,simple
+"My package arrived, but it was visibly damaged when delivered. What should I do?",simple
+"I received a product from a third-party seller, and it was damaged. Who should I contact for help?",simple
+"Hi, I noticed I've been charged twice for my recent order. Can you help with this?",simple
+I was charged more than the total shown in my confirmation email. What happened?,simple
+I didn't make this purchase. Can you check if my account was used without my permission?,simple
+"I was told I'd get a refund last week, but it hasn't shown up yet. Can you update me on this?",simple
+"Hi, I can't remember my password and need to reset it, but I'm not getting the reset email.",simple
+I tried logging in several times and now my account is locked. I need access immediately.,simple
+"I can't log in because the system says my email isn't recognized, but I know it's correct.",simple
+"Hi, I received my order, but the package was visibly damaged and the product inside is completely broken and unusable. I'm really frustrated and unsure what to do. Can you help me resolve this urgently?",complex
+"I ordered a gadget two weeks ago and it hasn’t arrived. Plus, I’m trying to return another product but the seller won’t respond. Can you help me track the package and assist with the return? This is getting really frustrating.",complex
+"I ordered a gadget two weeks ago, but it hasn't arrived yet. Plus, I received an iPhone 14 case instead of the iPhone 15 case I ordered. Can you help me track the gadget and fix the case mix-up? This is really frustrating!",complex
+"I’m really frustrated! I was overcharged compared to my confirmation email, and to top it off, you sent the wrong item—I ordered a blue shirt but got a red one. What’s going on, and how can we fix this quickly?",complex
+"I ordered an iPhone 15 case but received one for an iPhone 14. Also, I was promised a refund last week, but it hasn't appeared yet. Can you please update me urgently on both these issues? I'm getting frustrated with the delay.",complex
+"I purchased a blender from you a few months back, and it's suddenly stopped working. I've tried contacting the manufacturer with no response. I'm frustrated and need urgent help—can you assist with troubleshooting or a warranty claim for this faulty device?",very_complex
+"I’m really frustrated. I received a red shirt instead of the blue one I ordered, my power tool is faulty and needs warranty assistance, and I also need to know how to secure my account. Can you urgently help with these issues?",very_complex
