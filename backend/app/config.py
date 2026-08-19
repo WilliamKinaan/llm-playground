@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     mistral_chat_model: str = "ministral-8b-latest"
     mistral_moderation_model: str = "mistral-moderation-latest"
 
+    # Model Evaluation feature: logs test-suite runs to a Phoenix Cloud space
+    # (https://app.phoenix.arize.com) as Experiments, so accuracy can be
+    # tracked run-over-run. No default - the app should fail fast rather than
+    # silently pointing at nothing.
+    phoenix_api_key: str
+    phoenix_base_url: str
+
 
 @lru_cache
 def get_settings() -> Settings:

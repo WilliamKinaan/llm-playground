@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Model Evaluation — LLM Playground</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <nav class="breadcrumb"><a href="/">&larr; LLM Playground</a></nav>
+
+  <header>
+    <h1>Model Evaluation</h1>
+    <p>Step 1 of a support-ticket pipeline: the <strong>router</strong> reads a customer
+      message and picks a department. Try it on your own message, or run the full
+      known-answer test suite and track accuracy over time in Phoenix.</p>
+  </header>
+
+  <main>
+    <div class="panel">
+      <label for="message-input"><strong>Customer message</strong></label>
+      <textarea id="message-input" placeholder="e.g. I was charged twice for my order"></textarea>
+      <button id="classify-btn">Classify</button>
+      <div id="classify-error" class="error" hidden></div>
+
+      <div id="classify-result" class="results" hidden>
+        <span id="department-badge" class="badge"></span>
+        <div id="reasoning-text" class="variant-output"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <strong>Test suite</strong>
+      <p class="hint">Runs every known-answer test case against the router in the
+        background and logs the results to Phoenix as an Experiment, so accuracy can be
+        compared run over run.</p>
+      <button id="run-btn">Run</button>
+      <div id="run-error" class="error" hidden></div>
+
+      <div id="run-progress" hidden>
+        <span class="bar-track"><span id="run-bar-fill" class="bar-fill" style="width:0%"></span></span>
+        <span id="run-progress-text" class="hint"></span>
+      </div>
+
+      <div id="run-summary" class="explanation-panel" hidden>
+        <div id="run-accuracy"></div>
+        <a id="phoenix-link" href="#" target="_blank" rel="noopener">View in Phoenix &rarr;</a>
+      </div>
+    </div>
+  </main>
+
+  <script src="/assets/js/api.js"></script>
+  <script src="model-evaluation.js"></script>
+</body>
+</html>

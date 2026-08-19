@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.features.llm_quirks.router import router as llm_quirks_router
+from app.features.model_evaluation.router import router as model_evaluation_router
 from app.features.moderation.router import router as moderation_router
 from app.features.token_efficiency.router import router as token_efficiency_router
 from app.features.tool_calling.router import router as tool_calling_router
@@ -24,6 +25,7 @@ app.include_router(moderation_router)
 app.include_router(llm_quirks_router)
 app.include_router(token_efficiency_router)
 app.include_router(tool_calling_router)
+app.include_router(model_evaluation_router)
 
 # Mounted last so it only handles paths not matched by an API route above.
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
