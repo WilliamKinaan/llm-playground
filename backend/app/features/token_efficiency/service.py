@@ -7,6 +7,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 
 from app.llm_client import ChatResult, run_chat
+from app.rate_limiter import reserve
 
 from .catalog import (
     ANSWER_SYSTEM_PROMPT,
@@ -155,6 +156,11 @@ def _run_single_shot(query: str) -> SingleShotResult:
 
 
 def compare(query: str) -> CompareResponse:
+    # One click here fires up to 3 real calls (chained: 1-2, single-shot: 1) -
+    # reserve the worst case upfront, before dispatching either pipeline, so
+    # a click either fully succeeds or fails cleanly rather than coming back
+    # with one pipeline's result and the other 429'd.
+    reserve(3)
     # Run both pipelines at the same time so the wait is roughly the slower
     # one, not the sum of three sequential calls.
     with ThreadPoolExecutor(max_workers=2) as executor:

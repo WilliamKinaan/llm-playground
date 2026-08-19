@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     mistral_chat_model: str = "ministral-8b-latest"
     mistral_moderation_model: str = "mistral-moderation-latest"
 
+    # Placeholder defaults for the in-memory rate limiter (see
+    # app/rate_limiter.py) - Mistral doesn't publish exact free-tier numbers;
+    # check Admin Panel -> API -> Limits for this workspace's real limit, and
+    # size these as roughly this app's share of it if other apps share the
+    # same key.
+    rate_limit_max_requests: int = 5
+    rate_limit_window_seconds: float = 10.0
+
 
 @lru_cache
 def get_settings() -> Settings:

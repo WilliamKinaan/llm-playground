@@ -5,11 +5,13 @@ transport layer and llm_client stays generic/reusable across features.
 """
 
 from app.llm_client import run_moderation
+from app.rate_limiter import reserve
 
 from .schemas import CategoryResult, ModerationResponse
 
 
 def check_moderation(text: str) -> ModerationResponse:
+    reserve(1)  # one call to the moderation endpoint
     response = run_moderation(text)
     result = response.results[0]
 

@@ -150,9 +150,15 @@ sudo firewall-cmd --permanent --add-port=8001/tcp && sudo firewall-cmd --reload
 
 ## Known caveats
 
-- **No auth / no rate limiting** on `/api/moderation/check` or
-  `/api/llm-quirks/.../run` — anyone who finds the URL can spend the Mistral quota
-  on the key in `.env`. Acceptable for a portfolio demo; revisit if that changes.
+- **No auth**, and only a simple in-memory rate limit (see
+  `backend/app/rate_limiter.py` — one global fixed-window request counter, no
+  Redis, resets on restart, blind to traffic on other apps sharing this same
+  Mistral key). Anyone who finds the URL can still spend the Mistral quota, just
+  bounded per short window instead of unbounded. Tune `RATE_LIMIT_MAX_REQUESTS` /
+  `RATE_LIMIT_WINDOW_SECONDS` in `.env` against the real limit at
+  console.mistral.ai → Admin Panel → API → Limits (sized as this app's *share*,
+  since rag-prototype and other live apps draw on the same workspace key).
+  Acceptable for a portfolio demo; revisit if that changes.
 - **No TLS on the raw IP:port** — `134.98.154.12:8001` is plain HTTP, same as
   rag-prototype. TLS is only available via the `llm.williamkinaan.com` domain
   (Cloudflare + nginx, see "Custom domain" above).

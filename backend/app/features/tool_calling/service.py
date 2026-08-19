@@ -13,6 +13,7 @@ import json
 from collections.abc import Callable
 
 from app.llm_client import ChatResult, run_chat
+from app.rate_limiter import reserve
 
 from .schemas import (
     CustomFunctionDefinition,
@@ -113,6 +114,11 @@ def _build_name_and_resolver(fn: FunctionInput) -> tuple[str, Resolver]:
 
 
 def run_tool_calling(query: str, functions: list[FunctionInput]) -> ToolCallingResponse:
+    # One click here makes 1 or 2 real calls (the first, and a second round
+    # only if the model asked for a tool) - reserve the worst case upfront so
+    # a run either fully succeeds or fails cleanly, never returning with only
+    # the first half done.
+    reserve(2)
     tool_schemas = [_build_tool_schema(fn) for fn in functions] or None
     resolvers_by_name = dict(_build_name_and_resolver(fn) for fn in functions)
 

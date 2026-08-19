@@ -15,6 +15,8 @@ import threading
 
 from fastapi import HTTPException
 
+from app.rate_limiter import reserve
+
 from .data import EXAMPLE_MESSAGES, TEST_CASES
 from .router_chain import DEPARTMENTS, classify as run_router_chain
 from .schemas import ClassifyResponse, DepartmentInfo, ExampleMessage, RunStatus
@@ -39,6 +41,9 @@ def list_example_messages() -> list[ExampleMessage]:
 
 
 def classify_message(message: str) -> ClassifyResponse:
+    reserve(1)  # outside the try/except below, so a RateLimitExceeded here
+    # propagates as-is (-> a clean 429 via main.py's handler) instead of
+    # being folded into the generic 502 that wraps real model-call failures.
     try:
         result = run_router_chain(message)
     except Exception as exc:  # noqa: BLE001 - surface any provider error to the UI
@@ -47,6 +52,11 @@ def classify_message(message: str) -> ClassifyResponse:
 
 
 def _classify_test_case(tc) -> dict:
+    # Reserve one call per test case (not the whole suite upfront) so this
+    # long-running background batch self-throttles against the same global
+    # budget as it runs, rather than starving every other feature or always
+    # failing outright for a 30-row suite.
+    reserve(1)
     result = run_router_chain(tc.customer_message)
     return {
         "test_id": tc.test_id,
