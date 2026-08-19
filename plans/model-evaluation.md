@@ -1,98 +1,157 @@
-# Model Evaluation feature (router step) + Phoenix Cloud eval tracking
+# Model Evaluation — Feature Plan
 
 ## Context
 
-This adds a new feature, **Model Evaluation**, to `llm-playground`. It's the first step ("router step") of a planned multi-step pipeline: classify a customer message into one of 7 departments (`BILLING`, `RETURNS`, `TECHNICAL_SUPPORT`, `ORDER_STATUS`, `PRODUCT_INQUIRY`, `ACCOUNT_MANAGEMENT`, `ESCALATION`), returning `{"department": ..., "reasoning": ...}`. Unlike the rest of the app (raw `openai` client against Mistral's OpenAI-compatible endpoint), this feature must use **LangChain** — mirroring the stack in `/Users/williamkinaan/Documents/ai/chatagent` (`langchain` 1.x + `langchain-mistralai`'s `ChatMistralAI`, config via `pydantic-settings`). That repo has no router/classification chain to copy verbatim, so the classification chain itself (`.with_structured_output()` over a Pydantic schema) is new, built in that same LangChain 1.x style.
+Fifth top-level feature for `llm-playground` (sibling to Content Moderation, LLM
+Quirks, Token Efficiency, and Tool Calling). It's the first step ("router step") of
+a planned multi-step support-ticket pipeline: classify a customer message into one
+of 7 departments (`BILLING`, `RETURNS`, `TECHNICAL_SUPPORT`, `ORDER_STATUS`,
+`PRODUCT_INQUIRY`, `ACCOUNT_MANAGEMENT`, `ESCALATION`), returning
+`{"department": ..., "reasoning": ...}`.
 
-The user has 30 known-answer test cases (`/Users/williamkinaan/Downloads/agentic-ai-build-your-first-agentic-ai-system-4645038-main/data/v1_test_cases.csv`, columns `test_id,customer_message,expected_department,category`). Clicking "Run" should execute all of them against the router in the background (non-blocking, UI polls for progress) and log results to **Arize Phoenix** so accuracy can be tracked run-over-run. Confirmed with the user: use **Phoenix Cloud's free tier** (hosted at `app.phoenix.arize.com`) rather than self-hosting Phoenix in Docker on the Oracle VM — no extra RAM/CPU/disk footprint on the box that already runs `rag-prototype` + this app, and the free tier (~50k traces/mo, ~7-day retention) is far more than a ~30-case demo needs. The user already provided a Phoenix API key — **it goes only into `.env` (gitignored) as `PHOENIX_API_KEY`, never into committed code, the plan, or any file under version control.**
+Unlike every other feature (raw `openai` client against Mistral's OpenAI-compatible
+endpoint via `app/llm_client.py`), this one uses **LangChain** on purpose — mirroring
+the stack in `/Users/williamkinaan/Documents/ai/chatagent` (`langchain` 1.x +
+`langchain-mistralai`'s `ChatMistralAI`). That repo had no router/classification
+chain to copy verbatim, so the chain itself (`.with_structured_output()` over a
+Pydantic schema) is new, built in that same LangChain 1.x style. LangChain is
+deliberately scoped to `router_chain.py` in this one feature rather than folded into
+the shared `llm_client.py`, which stays `openai`-specific for every other feature.
 
-Phoenix's **Datasets & Experiments** feature is the right primitive for "accuracy over time": upload the 30 test cases once as a Dataset, then each "Run" click calls `run_experiment(dataset, task=..., evaluators=[...])` under a fresh timestamped experiment name. Phoenix's UI lists every experiment run against that dataset with its evaluator score, in chronological order — exactly "accuracy by time" — with no custom charting code needed on our side.
+Test data comes from two CSVs the user provided, copied into the feature folder
+as-is (kept as CSV, not transcribed into Python literals, since they're
+externally-sourced tabular data — diffable/re-importable if updated):
+- `test_cases.csv` (30 rows, `test_id,customer_message,expected_department,category`)
+  — the known-answer suite the "Run" button executes.
+- `example_messages.csv` (22 rows, trimmed from a richer source CSV down to
+  `message,complexity`) — sample messages for a "choose an example" dropdown next to
+  the "Try it" textarea, purely to save typing; no expected answer attached.
 
-## Backend
+**Design went through three iterations:**
 
-### New dependencies (`backend/requirements.txt`)
-Add, loosely pinned like `chatagent`'s `requirements.txt`:
-```
-langchain>=1.3,<2.0
-langchain-mistralai>=1.1,<2.0
-arize-phoenix-client
-```
-(`langchain-core` comes in transitively.) `arize-phoenix-client` is the lightweight client-only package (talks to any Phoenix instance over HTTP — cloud or self-hosted — for datasets/experiments); it does not bundle a local server, so no new process to run.
+**v1** (initial build) logged every "Run" to **Arize Phoenix Cloud** (the user's
+personal free-tier space) as a Datasets & Experiments run, and the "View in
+Phoenix" link was how results/accuracy were meant to be seen — nothing was
+rendered in-page.
 
-### Config (`backend/app/config.py`)
-Add fields to `Settings`, following the existing `mistral_*` pattern (sane defaults where possible, required where not):
-```python
-phoenix_api_key: str
-phoenix_base_url: str = "https://app.phoenix.arize.com/s/<space-name>"  # exact value confirmed during build from the user's Phoenix space
-phoenix_project_name: str = "model-evaluation"
-```
-Update `.env.example` with `PHOENIX_API_KEY=` (placeholder) and a comment pointing at `app.phoenix.arize.com`. The real key the user pasted goes straight into their local `.env`, never echoed elsewhere.
+**v2**: the user flagged the real problem with v1 before it ever went out —
+Phoenix Cloud is a personal account, so a public demo's visitors would hit a login
+wall clicking that link (self-hosting Phoenix without auth was also considered and
+rejected: it would add a persistent container competing for RAM/CPU with the other
+services already on the same Oracle VM). Fix: results moved in-page. `RunStatus`
+gained a `results: list[TestCaseResult]` field populated as each test case
+finishes (test id, message, expected vs. actual department, correct/incorrect),
+computed by a plain sequential loop over the test cases — no longer routed through
+Phoenix's `run_experiment` task callback, so the app's own progress/results never
+depended on parsing Phoenix's return shape. Phoenix logging became a decoupled,
+best-effort side step (`_log_to_phoenix`) that ran *after* the real results were
+already known, reused them (no second LLM call), and swallowed any error so a
+Phoenix outage could never fail a run. The "View in Phoenix" link itself was gated
+behind a `SHOW_PHOENIX_LINK` setting (default `false`), so it was hidden on any
+deployment unless explicitly opted into.
 
-### New feature: `backend/app/features/model_evaluation/`
-Mirrors the `tool_calling` feature's file split (`router.py` / `schemas.py` / `service.py` / data file), per `CLAUDE.md`'s vertical-slice convention.
+**v3** (current): once in-page results were working and confirmed to fully cover
+what Phoenix was providing, the user asked to remove Phoenix entirely rather than
+keep it around gated-off. Deleted: the `arize-phoenix-client` dependency (and
+uninstalled from the local venv), all `phoenix_*`/`show_phoenix_link` settings,
+the `/phoenix-link` endpoint, `PhoenixLinkResponse`, and all Phoenix client/dataset
+logic from `service.py`. This was a pure deletion — the in-page results added in
+v2 already didn't depend on any of it, so nothing else changed behavior-wise.
+`PHOENIX_*` env vars were also dropped from `.env` and `.env.example`.
 
-- **`schemas.py`** — `Department = Literal["BILLING","RETURNS","TECHNICAL_SUPPORT","ORDER_STATUS","PRODUCT_INQUIRY","ACCOUNT_MANAGEMENT","ESCALATION"]`; `ClassifyRequest {message: str}`; `ClassifyResponse {department: Department, reasoning: str}` (matches the required `{"department": ..., "reasoning": ...}` shape exactly); `RunStatus {status: Literal["idle","running","done","error"], completed: int, total: int, accuracy: float | None, experiment_url: str | None, error: str | None}`.
+## Backend — current state
 
-- **`router_chain.py`** — the LangChain piece, isolated here rather than in the shared `app/llm_client.py` (which is `openai`-specific and used by every other feature — keeping LangChain scoped to this one feature avoids disturbing that shared module):
-  ```python
-  from langchain_mistralai import ChatMistralAI
-  from pydantic import BaseModel
+`backend/app/features/model_evaluation/`, same vertical-slice split as every other
+feature (`router.py` / `schemas.py` / `service.py` / data files), per `CLAUDE.md`.
 
-  class RouterOutput(BaseModel):
-      department: Department
-      reasoning: str
+- **`schemas.py`**: `Department` (the 7-value `Literal`); `DepartmentInfo` (code +
+  description, for `GET /departments`); `ExampleMessage` (message + complexity, for
+  `GET /examples`); `ClassifyRequest`/`ClassifyResponse` (the `{department,
+  reasoning}` shape); `TestCaseResult` (one row of a run's results);  `RunStatus`
+  (`status`, `completed`, `total`, `accuracy`, `error`, `results: list[TestCaseResult]`).
 
-  @lru_cache
-  def _classifier():
-      settings = get_settings()
-      llm = ChatMistralAI(model=settings.mistral_chat_model, temperature=0, api_key=settings.mistral_api_key)
-      return llm.with_structured_output(RouterOutput)
+- **`router_chain.py`**: `DEPARTMENTS: list[DepartmentInfo]` is the single source of
+  truth for department descriptions — both `ROUTER_SYSTEM_PROMPT` (built by joining
+  the list) and `GET /departments` are driven off it, so the prompt and what the UI
+  tells users can't drift apart. `_classifier()` is an `@lru_cache`d
+  `ChatMistralAI(...).with_structured_output(RouterOutput)`, mirroring
+  `get_client()`'s singleton pattern in `app/llm_client.py`. `classify(message)`
+  invokes it with a `system`/`user` message pair.
 
-  def classify(message: str) -> RouterOutput:
-      return _classifier().invoke([("system", ROUTER_SYSTEM_PROMPT), ("user", message)])
-  ```
-  `ROUTER_SYSTEM_PROMPT` lists the 6 real departments with a one-line description each, and instructs the model to return `ESCALATION` only when nothing else clearly fits.
-
-- **`test_cases.csv`** — the user's 30 rows copied in as-is (kept as CSV, not transcribed into a Python literal, since it's externally-sourced tabular data — diffable/re-importable if the user updates it later).
-
-- **`data.py`** — parses `test_cases.csv` at import time into `TEST_CASES: list[TestCase]` (`@dataclass(frozen=True)`: `test_id, customer_message, expected_department, category`), same "single source of truth" role as `cases.py`/`catalog.py`.
+- **`data.py`**: parses both CSVs at import time into `TEST_CASES: list[TestCase]`
+  and `EXAMPLE_MESSAGES: list[ExampleMessage]`.
 
 - **`service.py`**:
-  - `classify_message(message: str) -> ClassifyResponse` — wraps `router_chain.classify`, same try/except-to-inline-error-string pattern as `tool_calling/service.py`, for the ad-hoc "try a prompt" panel.
-  - Background experiment runner, guarded by a module-level `_STATE` dict + `threading.Lock` (single-run-at-a-time; a second `POST /run-tests` while one is in flight just returns the current status instead of double-starting):
-    - `start_run()` spawns a daemon `threading.Thread` running `_run_experiment()`, mirroring the `ThreadPoolExecutor`/`threading.Thread` patterns already used in `token_efficiency` and `llm_quirks`.
-    - `_run_experiment()`: gets-or-creates a Phoenix dataset named e.g. `"router-test-cases"` from `TEST_CASES` (lookup by name first so re-runs reuse the same dataset id); defines `task(example)` that calls `router_chain.classify(example.input["customer_message"])` **and increments `_STATE["completed"]` as a side effect** (this gives real per-item progress even though `run_experiment` owns the iteration — no need to reimplement it); defines `evaluator(output, example)` comparing `output.department` to `example.output["expected_department"]`, returning score `1.0`/`0.0`, label `correct`/`incorrect`; calls `phoenix.Client(...).experiments.run_experiment(dataset, task=task, evaluators=[evaluator], experiment_name=f"router-eval-{utc_timestamp}")`; on completion stores `accuracy` (mean score) and the experiment's Phoenix UI URL into `_STATE`; any exception is caught and stored in `_STATE["error"]` rather than crashing the thread.
-  - `get_run_status() -> RunStatus` reads `_STATE`.
+  - `classify_message()` — wraps `router_chain.classify`, raising a 502 with the
+    provider error as `detail` on failure (checked by FastAPI's default
+    `{"detail": ...}` shape, which `api.js` already parses).
+  - `list_departments()` / `list_example_messages()` — thin passthroughs for the
+    router.
+  - Background test-suite runner: module-level `_state` dict + `threading.Lock`
+    (single-run-at-a-time — a second `POST /run-tests` while one is in flight just
+    returns the current status). `start_run()` spawns a daemon `threading.Thread`
+    running `_run_experiment()`, matching the `threading.Thread` pattern in
+    `llm_quirks/service.py`. `_run_experiment()` loops `TEST_CASES` sequentially,
+    calling `_classify_test_case()` per row and appending a result dict to
+    `_state["results"]` (and bumping `_state["completed"]`) after each one — this is
+    what gives the frontend real per-item progress on every poll. On completion,
+    accuracy is computed locally as `mean(r["correct"] for r in results)`. Any
+    exception sets `status="error"` with the message in `error` rather than dying
+    silently in the thread.
+  - `get_run_status()` reads `_state` under the lock.
 
-- **`router.py`**:
-  ```python
-  router = APIRouter(prefix="/api/model-evaluation", tags=["model-evaluation"])
+- **`router.py`**: `GET /departments`, `GET /examples`, `POST /classify`,
+  `POST /run-tests`, `GET /run-status` — all under `/api/model-evaluation`.
 
-  @router.post("/classify", response_model=ClassifyResponse)
-  def classify(request: ClassifyRequest) -> ClassifyResponse: ...
+- **`backend/app/main.py`**: `model_evaluation_router` registered like the other
+  four.
 
-  @router.post("/run-tests", response_model=RunStatus)
-  def run_tests() -> RunStatus: ...   # starts (or no-ops onto) the background run, returns current status
+- **`backend/app/config.py`**: no Model Evaluation-specific settings remain — it
+  reuses `mistral_chat_model`/`mistral_api_key` like every other feature.
 
-  @router.get("/run-status", response_model=RunStatus)
-  def run_status() -> RunStatus: ...  # polled by the frontend
-  ```
+- **`backend/requirements.txt`**: added `langchain>=1.3,<2.0` and
+  `langchain-mistralai>=1.1,<2.0` (loosely pinned like `chatagent`'s
+  `requirements.txt`; `langchain-core` comes in transitively). No Phoenix package.
 
-### `backend/app/main.py`
-Import and `app.include_router(model_evaluation_router)`, same one-line pattern as the other three features.
+## Frontend — current state
 
-## Frontend
+`frontend/features/model-evaluation/index.html` + `model-evaluation.js`, same
+skeleton as every other feature page (`breadcrumb`, shared `style.css`, `api.js`
+loaded before the feature script; DOM is the source of truth, no separate JS model
+object).
 
-- **`frontend/features/model-evaluation/index.html` + `model-evaluation.js`** — same skeleton as `tool-calling` (`breadcrumb`, shared `style.css`, `api.js` loaded before the feature script). Two panels:
-  1. **Try it**: textarea for a message + "Classify" button → `apiPost("/api/model-evaluation/classify", ...)` → renders the department as a badge and the reasoning text (mirrors the exact `{department, reasoning}` JSON shape visually).
-  2. **Run test suite**: "Run" button → `apiPost("/api/model-evaluation/run-tests", {})`, then polls `apiGet("/api/model-evaluation/run-status")` every ~2s (simple `setInterval`, cleared on `"done"`/`"error"`) updating a live "`{completed} / {total}` complete" line; on `"done"` shows the resulting accuracy % and a **"View in Phoenix →"** link (`target="_blank"`) to `experiment_url`.
-- **`frontend/index.html`** — add one more `.feature-card` linking to `/features/model-evaluation/`.
+- **Departments panel**: `#departments-list`, populated on load from
+  `GET /departments`, reusing `tool-calling`'s `.template-condition-row` styling
+  (a small CSS override in `style.css` widens its first column for the longer
+  department codes).
+- **Try it panel**: `#message-input` textarea, an example-message `<select>` +
+  "Choose" button (populated from `GET /examples`; clicking "Choose" copies the
+  selected message into the textarea — no auto-fill on select), and "Classify" →
+  `POST /classify` → renders a department badge (`flagged` styling for
+  `ESCALATION`, `clear` otherwise) + reasoning text.
+- **Test suite panel**: "Run" → `POST /run-tests` (returns immediately) → polls
+  `GET /run-status` every 1.5s via `setInterval` (cleared on `"done"`/`"error"`),
+  updating a progress bar/count and re-rendering `#results-list` from
+  `status.results` on every poll — so result cards (test id, correct/incorrect
+  badge, message, expected-vs-actual) fill in live as the run progresses, not just
+  at the end. Shows the final accuracy % once `status === "done"`.
+- **`frontend/index.html`**: one `.feature-card` linking to
+  `/features/model-evaluation/`.
 
 ## Verification
 
-1. `pip install -r backend/requirements.txt` (new LangChain + Phoenix client deps), fill `PHOENIX_API_KEY` into root `.env`, confirm `MISTRAL_API_KEY` still set.
-2. `uvicorn app.main:app --reload --app-dir backend`, open `http://localhost:8000/features/model-evaluation/`.
-3. "Try it" panel: submit a couple of the CSV's messages by hand (e.g. `"I want to speak to a manager NOW"`) and confirm the returned department matches the CSV's `expected_department` (`ESCALATION`) and reasoning is non-empty.
-4. Click "Run" — confirm the button/UI doesn't block, progress counter advances toward 30/30, and on completion an accuracy % and a working Phoenix link appear.
-5. Open the Phoenix link — confirm the dataset (`router-test-cases`, 30 examples) and the new experiment run with its per-example scores are visible in the Phoenix Cloud UI.
-6. Click "Run" a second time — confirm it reuses the same dataset (doesn't duplicate it) and creates a *second* experiment entry, so the dataset's experiment list now shows two dated accuracy data points — the "accuracy over time" view.
+1. `pip install -r backend/requirements.txt` (LangChain deps only — no Phoenix
+   package), confirm `MISTRAL_API_KEY` set in `.env`.
+2. `uvicorn app.main:app --reload --app-dir backend`, open
+   `http://localhost:8000/features/model-evaluation/`.
+3. Departments list renders all 7 codes + descriptions; example dropdown has 22
+   entries; "Choose" copies the selected message into the textarea.
+4. "Classify" on a known message (e.g. "I want to speak to a manager NOW") returns
+   `ESCALATION` with non-empty reasoning.
+5. "Run" doesn't block the page; progress (`N / 30 complete`) and result cards fill
+   in live; final state shows 30/30 and an accuracy percentage (consistently
+   ~97% — 29/30 — on the current test set).
+6. `GET /api/model-evaluation/phoenix-link` returns 404 (route removed); no
+   `phoenix`/`arize` string appears anywhere under `backend/` or `frontend/`; no
+   `PHOENIX_*` vars in `.env`/`.env.example`; `arize-phoenix-client` uninstalled
+   from the local venv.
